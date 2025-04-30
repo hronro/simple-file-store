@@ -7,6 +7,11 @@ use anyhow::{Context, Result, bail};
 use rand::distr::{Alphanumeric, SampleString};
 use rand::rng;
 
+const VERSION: &str = match std::option_env!("CARGO_PKG_VERSION") {
+    Some(version) => version,
+    None => "unknown",
+};
+
 pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
     let cfg = Config::from_env_and_cli();
 
@@ -139,8 +144,8 @@ impl UserConfig {
     }
 
     /// Get the configuration from the command line arguments.
-    /// Also handles the `--help` argument,
-    /// which prints the help message and exits the process.
+    /// Also handles the `--help` and the `--version` argument,
+    /// which would exits the process immediately.
     pub fn from_cli() -> Result<Self> {
         let mut config = UserConfig::default();
 
@@ -158,6 +163,7 @@ impl UserConfig {
                         --password, -w <PASSWORD>\tPassword for authentication (default: password)\n\
                         --secret, -x <SECRET>\t\tSecret for JWT (default: random 16 characters)\n\
                         --token-exp, -e <SECONDS>\tToken expiry in seconds (default: 24 hours)\n\
+                        --version, -v\t\t\tPrint version information\n\
                         --help, -h\t\t\tPrint this help message\n\n\
                         All options are optional, they can also be set using the following environment variables:\n\
                         SFS_LISTEN\t\tListen address\n\
@@ -169,6 +175,11 @@ impl UserConfig {
                         SFS_TOKEN_EXP\t\tToken expiry in seconds\n
                         "
                     );
+                    std::process::exit(0);
+                }
+
+                "--version" | "-v" => {
+                    println!("version {}", VERSION);
                     std::process::exit(0);
                 }
 
