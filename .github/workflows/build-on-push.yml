@@ -1,0 +1,112 @@
+name: Build Executables On Push
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-gnu
+          - aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.86
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Cross
+        run: cargo install cross
+
+      - name: Build ${{ matrix.target }}
+        timeout-minutes: 60
+        env:
+          RUSTFLAGS: "-C target-feature=-crt-static"
+        run: cross build --target ${{ matrix.target }} --release
+
+      - name: Make Tarball
+        run: |
+          mv target/${{ matrix.target }}/release/simple-file-store simple-file-store
+          XZ_OPT=-e9 tar caf simple-file-store.${{ matrix.target }}.tar.xz simple-file-store
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: simple-file-store.${{ matrix.target }}.tar.xz
+          path: simple-file-store.${{ matrix.target }}.tar.xz
+
+  build-macos:
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GNU tar
+        run: |
+          brew install gnu-tar
+          echo '/usr/local/opt/gnu-tar/libexec/gnubin' >> $GITHUB_PATH
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.86
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Cross
+        run: cargo install cross
+
+      - name: Build ${{ matrix.target }}
+        timeout-minutes: 60
+        run: cross build --target ${{ matrix.target }} --release
+
+      - name: Make Tarball
+        run: |
+          mv target/${{ matrix.target }}/release/simple-file-store simple-file-store
+          XZ_OPT=-e9 tar caf simple-file-store.${{ matrix.target }}.tar.xz simple-file-store
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: simple-file-store.${{ matrix.target }}.tar.xz
+          path: simple-file-store.${{ matrix.target }}.tar.xz
+
+  # Ignore windows build for now
+  #
+  # build-windows:
+  #   runs-on: windows-2025
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Install Rust
+  #       uses: dtolnay/rust-toolchain@1.86
+  #
+  #     - name: Build
+  #       timeout-minutes: 60
+  #       run: cargo build --release
+  #
+  #     - name: Make Tarball
+  #       run: |
+  #         mv target/release/simple-file-store.exe simple-file-store.exe
+  #         7z a -t7z -mx=9 simple-file-store.x86_64-pc-windows-msvc.7z simple-file-store.exe
+  #
+  #     - name: Upload Artifacts
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: simple-file-store.x86_64-pc-windows-msvc.7z
+  #         path: simple-file-store.x86_64-pc-windows-msvc.7z
