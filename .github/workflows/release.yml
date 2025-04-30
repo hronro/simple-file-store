@@ -1,15 +1,18 @@
-name: Build Executables On Push
+name: Build Releases
 
 on:
   push:
-    branches:
-      - master
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+permissions:
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-linux:
+  release-linux:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -39,15 +42,14 @@ jobs:
       - name: Make Tarball
         run: |
           mv target/${{ matrix.target }}/release/simple-file-store simple-file-store
-          XZ_OPT=-e9 tar caf simple-file-store-${{ matrix.target }}.tar.xz simple-file-store
+          XZ_OPT=-e9 tar caf simple-file-store-${{  github.ref_name }}-${{ matrix.target }}.tar.xz simple-file-store
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
         with:
-          name: ${{ matrix.target }}
-          path: simple-file-store-${{ matrix.target }}.tar.xz
+          files: simple-file-store-${{  github.ref_name }}-${{ matrix.target }}.tar.xz
 
-  build-macos:
+  release-macos:
     runs-on: macos-15
     strategy:
       fail-fast: false
@@ -78,17 +80,16 @@ jobs:
       - name: Make Tarball
         run: |
           mv target/${{ matrix.target }}/release/simple-file-store simple-file-store
-          XZ_OPT=-e9 tar caf simple-file-store-${{ matrix.target }}.tar.xz simple-file-store
+          XZ_OPT=-e9 tar caf simple-file-store-${{  github.ref_name }}-${{ matrix.target }}.tar.xz simple-file-store
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
         with:
-          name: ${{ matrix.target }}
-          path: simple-file-store-${{ matrix.target }}.tar.xz
+          files: simple-file-store-${{  github.ref_name }}-${{ matrix.target }}.tar.xz
 
   # Skip windows for now
   #
-  # build-windows:
+  # release-windows:
   #   runs-on: windows-2025
   #   steps:
   #     - uses: actions/checkout@v4
@@ -105,8 +106,7 @@ jobs:
   #         mv target/release/simple-file-store.exe simple-file-store.exe
   #         7z a -t7z -mx=9 simple-file-store-x86_64-pc-windows-msvc.7z simple-file-store.exe
   #
-  #     - name: Upload Artifacts
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: x86_64-pc-windows-msvc
-  #         path: simple-file-store-x86_64-pc-windows-msvc.7z
+  #     - name: Upload Release Assets
+  #         uses: softprops/action-gh-release@v2
+  #         with:
+  #           files: simple-file-store-x86_64-pc-windows-msvc.7z
