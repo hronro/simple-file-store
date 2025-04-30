@@ -1,0 +1,116 @@
+use axum::response::Html;
+
+use crate::auth::Claims;
+use crate::files;
+
+pub const ROUTE_PATH: &str = "/";
+
+pub async fn get(claims: Option<Claims>) -> Html<String> {
+    let user_html = match claims {
+        Some(claims) => format!(
+            r###"<div class="user-info"><div class="user-avatar">{}</div><span>{}</span></div>"###,
+            claims.sub.get(0..1).unwrap().to_uppercase(),
+            claims.sub
+        ),
+        None => "".to_string(),
+    };
+
+    let jump_url = files::ROUTE_PATH_ROOT;
+
+    Html(format!(
+        r###"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Welcome | File Management System</title>
+<link rel="stylesheet" href="/_assets/reset.css">
+<link rel="stylesheet" href="/_assets/index.css">
+</head>
+<body>
+<!-- Background animation circles -->
+<div class="floating-circles-container">
+	<div class="floating-circle circle-1"></div>
+	<div class="floating-circle circle-2"></div>
+	<div class="floating-circle circle-3"></div>
+	<div class="floating-circle circle-4"></div>
+</div>
+
+<!-- Header -->
+<header class="header">
+	<div class="header-content">
+		<h1>File Management System</h1>
+		{user_html}
+	</div>
+</header>
+
+<!-- Main content -->
+<main class="main-container">
+	<!-- Hero section -->
+	<section class="splash-hero">
+		<h2 class="splash-title">Fast & Secure File Management</h2>
+		<p class="splash-subtitle">
+			A modern file management system designed for easy uploading, downloading,
+			and sharing of files, with robust security and intuitive user interface.
+		</p>
+	</section>
+
+	<!-- Features section -->
+	<section class="features-container">
+		<!-- Upload feature -->
+		<div class="feature-card">
+			<div class="feature-icon upload-icon">⬆️</div>
+			<h3 class="feature-title">Effortless Uploads</h3>
+			<p class="feature-description">
+				Quickly upload any type of file with our intuitive interface.
+				Supports drag & drop, multiple file selection, and resumable uploads
+				to ensure your files are transferred securely.
+			</p>
+			<div class="feature-highlight">
+				<span class="feature-highlight-icon">✓</span> No file size limits
+			</div>
+			<div class="feature-highlight">
+				<span class="feature-highlight-icon">✓</span> Resumable uploads available
+			</div>
+			<div class="feature-highlight">
+				<span class="feature-highlight-icon">✓</span> All file formats supported
+			</div>
+		</div>
+
+		<!-- Download feature -->
+		<div class="feature-card">
+			<div class="feature-icon download-icon">⬇️</div>
+			<h3 class="feature-title">Quick Downloads</h3>
+			<p class="feature-description">
+				Access and download your files from anywhere, anytime.
+				Our system ensures fast, reliable downloads with organized
+				file management for easy navigation.
+			</p>
+			<div class="feature-highlight">
+				<span class="feature-highlight-icon">✓</span> High-speed transfers
+			</div>
+			<div class="feature-highlight">
+				<span class="feature-highlight-icon">✓</span> Secure encrypted downloads
+			</div>
+			<div class="feature-highlight">
+				<span class="feature-highlight-icon">✓</span> User-friendly interface
+			</div>
+		</div>
+	</section>
+
+	<!-- Call to Action -->
+	<section class="cta-container">
+		<a href="{jump_url}" class="cta-button">
+			Explore Your Files
+		</a>
+	</section>
+</main>
+
+<!-- Footer -->
+<footer class="footer">
+	<p>© 2025 File Management System. All rights reserved.</p>
+</footer>
+</body>
+</html>"###
+    ))
+}

@@ -1,0 +1,161 @@
+body {
+	font-family: sans-serif;
+	background: linear-gradient(135deg, #e0f2fe, #dbeafe, #ede9fe);
+	color: #334155;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 100vh;
+	margin: 0;
+}
+
+.redirect-container {
+	width: 100%;
+	max-width: 500px;
+	padding: 2rem;
+}
+
+.redirect-card {
+	width: 100%;
+	border-radius: 16px;
+	overflow: hidden;
+	background-color: #ffffff;
+	box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+	text-align: center;
+	padding: 3rem 2rem;
+}
+
+.status-message {
+	margin-bottom: 2rem;
+}
+
+.status-message.success .status-icon {
+	background-color: #10b981;
+}
+
+.status-message.error .status-icon {
+	background-color: #ef4444;
+}
+
+.status-icon {
+	width: 80px;
+	height: 80px;
+	border-radius: 50%;
+	background-color: #6366f1;  /* Default purple */
+	color: white;
+	font-size: 2.5rem;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin: 0 auto 1.5rem;
+}
+
+h1 {
+	font-size: 1.75rem;
+	font-weight: 600;
+	color: #334155;
+	margin-bottom: 0.5rem;
+}
+
+p {
+	color: #64748b;
+	margin-bottom: 1.5rem;
+}
+
+.redirect-progress {
+	width: 100%;
+	height: 6px;
+	background-color: #e2e8f0;
+	border-radius: 3px;
+	margin-bottom: 2rem;
+	position: relative;
+	overflow: hidden;
+}
+
+.redirect-progress::after {
+	content: "";
+	position: absolute;
+	top: 0;
+	left: 0;
+	height: 100%;
+	width: 100%;
+	background: linear-gradient(to right, #6366f1, #06b6d4);
+	transform-origin: left;
+}
+
+@keyframes progress {
+	0% {
+		transform: scaleX(0);
+	}
+	100% {
+		transform: scaleX(1);
+	}
+}
+
+.redirect-link {
+	display: inline-block;
+	background: linear-gradient(to right, #6366f1, #4f46e5);
+	color: white;
+	font-weight: 500;
+	padding: 0.75rem 1.5rem;
+	border-radius: 10px;
+	text-decoration: none;
+	transition: all 0.3s ease;
+	box-shadow: 0 4px 6px rgba(99, 102, 241, 0.25);
+}
+
+.redirect-link:hover {
+	box-shadow: 0 6px 10px rgba(99, 102, 241, 0.35);
+	transform: translateY(-2px);
+}
+
+.redirect-footer {
+	margin-top: 1.5rem;
+	font-size: 0.9rem;
+	color: #64748b;
+}
+
+.circles {
+	position: fixed;
+	width: 100%;
+	height: 100%;
+	top: 0;
+	left: 0;
+	z-index: -1;
+	overflow: hidden;
+}
+
+.circle {
+	position: absolute;
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.15);
+}
+
+.circle-1 {
+	width: 300px;
+	height: 300px;
+	top: -100px;
+	right: -100px;
+	background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(6, 182, 212, 0.1));
+	animation: pulse 8s infinite alternate;
+}
+
+.circle-2 {
+	width: 250px;
+	height: 250px;
+	bottom: -50px;
+	left: -100px;
+	background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(6, 182, 212, 0.1));
+	animation: pulse 12s infinite alternate-reverse;
+}
+
+@keyframes pulse {
+	0%, 100% {
+		transform: scale(1) translate(0, 0);
+		opacity: 0.5;
+	}
+	50% {
+		transform: scale(1.2) translate(10px, 10px);
+		opacity: 0.8;
+	}
+}
