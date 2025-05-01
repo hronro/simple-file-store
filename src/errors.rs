@@ -32,7 +32,7 @@ impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
         match self {
             Self::MissingCredentials { current_uri } => (
-                StatusCode::BAD_REQUEST,
+                StatusCode::UNAUTHORIZED,
                 Html(html::redirect::gen_html_redirect(
                     html::redirect::HtmlRedirectConfig {
                         success: false,
@@ -78,7 +78,7 @@ impl IntoResponse for ServerError {
             }
 
             Self::InvalidToken { current_uri } => (
-                StatusCode::BAD_REQUEST,
+                StatusCode::UNAUTHORIZED,
                 Html(html::redirect::gen_html_redirect(
                     html::redirect::HtmlRedirectConfig {
                         success: false,
