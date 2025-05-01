@@ -2,7 +2,7 @@ use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
 use axum::body::Body;
 use axum::extract::{Multipart, OriginalUri, Path};
-use axum::http::header::CONTENT_LENGTH;
+use axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use axum::response::{Html, IntoResponse};
 use futures::{TryStreamExt, pin_mut};
 use size::Size;
@@ -209,8 +209,14 @@ pub async fn get(
         .into_response())
     } else {
         let file = fs::File::open(&full_path).await?;
+        let mime = mime_guess::from_path(&full_path)
+            .first_or_octet_stream()
+            .to_string();
         Ok((
-            [(CONTENT_LENGTH, metadata.len().to_string())],
+            [
+                (CONTENT_TYPE, mime),
+                (CONTENT_LENGTH, metadata.len().to_string()),
+            ],
             Body::from_stream(ReaderStream::new(file)),
         )
             .into_response())
