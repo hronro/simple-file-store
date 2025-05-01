@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Split the file link and the download link. Previously whether you click the file itself or click the download button, it would always download the file. Now, clicking the file link will open the file in a new tab, while clicking the download button will download the file.
+
 ### Fixed
 
 - Use correct HTTP status code (401) when authentication fails.

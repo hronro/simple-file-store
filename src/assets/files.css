@@ -90,7 +90,7 @@ body {
 	transition: all 0.2s ease;
 }
 
-.breadcrumb a:hover {
+.breadcrumb a:hover, .breadcrumb a:focus {
 	color: #4f46e5;
 }
 
@@ -105,16 +105,12 @@ body {
 }
 
 .file-list li {
+	position: relative;
 	border-bottom: 1px solid #e2e8f0;
-	transition: all 0.2s ease;
 }
 
 .file-list li:last-child {
 	border-bottom: none;
-}
-
-.file-list li:hover {
-	background-color: #f8fafc;
 }
 
 .file-item, .folder-item {
@@ -124,6 +120,11 @@ body {
 	text-decoration: none;
 	color: #334155;
 	position: relative;
+	transition: background-color 0.2s ease;
+}
+
+.file-item:hover, .file-item:focus, .folder-item:hover, .folder-item:focus {
+	background-color: #f8fafc;
 }
 
 .folder-item {
@@ -208,13 +209,23 @@ body {
 }
 
 .file-actions {
-	opacity: 0;
-	transition: opacity 0.2s ease;
-	margin-left: 1rem;
+	display: inline-flex;
+	align-items: center;
+	column-gap: 0.5rem;
+	position: absolute;
+	right: 1rem;
+	top: 0;
+	bottom: 0;
+	margin: auto 0;
+	overflow: hidden;
 }
 
-.file-item:hover .file-actions,
-.folder-item:hover .file-actions {
+.file-actions>* {
+	opacity: 0;
+	transition: opacity 0.2s ease;
+}
+
+.file-list li:hover .file-actions>*, .file-actions>*:focus {
 	opacity: 1;
 }
 
@@ -228,10 +239,10 @@ body {
 	font-size: 0.875rem;
 	font-weight: 500;
 	cursor: pointer;
-	transition: all 0.2s ease;
+	transition: background-color 0.2s ease;
 }
 
-.upload-btn:hover {
+.upload-btn:hover, .upload-btn:focus {
 	background-color: #4f46e5;
 }
 
@@ -243,11 +254,14 @@ body {
 	padding: 0.5rem 0.75rem;
 	font-size: 0.875rem;
 	font-weight: 500;
+	line-height: 1.1;
 	cursor: pointer;
+	text-align: center;
+	text-decoration: none;
 	transition: all 0.2s ease;
 }
 
-.download-btn:hover {
+.download-btn:hover, .download-btn:focus {
 	background-color: #4f46e5;
 }
 
@@ -326,7 +340,7 @@ body {
 		gap: 0.25rem;
 	}
 
-	.file-actions {
+	.file-actions>* {
 		opacity: 1;
 	}
 }
@@ -348,6 +362,10 @@ body {
 		padding: 1rem;
 	}
 
+	.file-item {
+		padding-bottom: 0;
+	}
+
 	.file-icon, .folder-icon {
 		margin-right: 0;
 		margin-bottom: 0.75rem;
@@ -359,8 +377,14 @@ body {
 	}
 
 	.file-actions {
-		align-self: flex-end;
-		margin-left: 0;
+		width: 100%;
+		position: relative;
+		margin-bottom: 1rem;
+		padding: 0 1rem;
+		right: 0;
+		flex-direction: column;
+		align-items: stretch;
+		row-gap: 0.25rem;
 	}
 }
 
@@ -412,7 +436,7 @@ body {
 	transition: all 0.2s ease;
 }
 
-.close-button:hover {
+.close-button:hover, .close-button:focus {
 	background-color: rgba(255, 255, 255, 0.2);
 }
 
@@ -453,7 +477,7 @@ body {
 	cursor: pointer;
 }
 
-.js-enabled .file-input-wrapper:hover {
+.js-enabled .file-input-wrapper:hover, .js-enabled .file-input-wrapper:focus {
 	border-color: #6366f1;
 	background-color: #f1f5f9;
 }
@@ -543,7 +567,7 @@ body {
 	border-radius: 4px;
 }
 
-.remove-selected-file:hover {
+.remove-selected-file:hover, .remove-selected-file:focus {
 	background-color: #fee2e2;
 }
 
@@ -695,7 +719,7 @@ body {
 	box-shadow: 0 4px 6px rgba(99, 102, 241, 0.25);
 }
 
-.btn-primary:hover {
+.btn-primary:hover, .btn-primary:focus {
 	box-shadow: 0 6px 10px rgba(99, 102, 241, 0.35);
 	transform: translateY(-2px);
 }
@@ -718,29 +742,9 @@ body {
 	border: 1px solid #e2e8f0;
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover, .btn-secondary:focus {
 	background-color: #f1f5f9;
 	border-color: #cbd5e1;
-}
-
-/* Show dialog trigger button styles */
-.show-dialog-btn {
-	background: linear-gradient(to right, #6366f1, #4f46e5);
-	color: white;
-	font-weight: 600;
-	padding: 0.9rem 1.5rem;
-	border: none;
-	border-radius: 10px;
-	cursor: pointer;
-	transition: all 0.3s ease;
-	box-shadow: 0 4px 6px rgba(99, 102, 241, 0.25);
-	margin: 2rem auto;
-}
-
-.show-dialog-btn:hover {
-	background: linear-gradient(to right, #4f46e5, #6366f1);
-	box-shadow: 0 6px 10px rgba(99, 102, 241, 0.35);
-	transform: translateY(-2px);
 }
 
 @media (max-width: 640px) {

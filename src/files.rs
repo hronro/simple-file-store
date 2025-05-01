@@ -2,7 +2,7 @@ use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
 use axum::body::Body;
 use axum::extract::{Multipart, OriginalUri, Path};
-use axum::http::header::{CONTENT_DISPOSITION, CONTENT_LENGTH};
+use axum::http::header::CONTENT_LENGTH;
 use axum::response::{Html, IntoResponse};
 use futures::{TryStreamExt, pin_mut};
 use size::Size;
@@ -68,7 +68,7 @@ pub async fn get(
                             _ => ("📃", "other")
                         };
                         let size = Size::from_bytes(entry_metadata.len());
-                        Ok((true, file_name.clone(), format!(r###"<li><a href="{uri}" download class="file-item"><div class="file-icon {file_icon_class}">{file_icon}</div><div class="file-details"><div class="file-name">{file_name}</div><div class="file-meta"><span class="file-size">{size}</span><span class="file-date">{modified}</span></div></div><div class="file-actions"><button class="download-btn">Download</button></div></a></li>"###)))
+                        Ok((true, file_name.clone(), format!(r###"<li><a href="{uri}" target="_blank" class="file-item"><div class="file-icon {file_icon_class}">{file_icon}</div><div class="file-details"><div class="file-name">{file_name}</div><div class="file-meta"><span class="file-size">{size}</span><span class="file-date">{modified}</span></div></div></a><div class="file-actions"><a href="{uri}" download="{file_name}" class="download-btn">Download</a></div></li>"###)))
                     }
                 })
                 .collect::<Result<Vec<_>, IoError>>()?;
@@ -209,15 +209,8 @@ pub async fn get(
         .into_response())
     } else {
         let file = fs::File::open(&full_path).await?;
-        let file_name = full_path.file_name().unwrap().to_string_lossy();
         Ok((
-            [
-                (
-                    CONTENT_DISPOSITION,
-                    format!(r#"attachment; filename="{file_name}""#),
-                ),
-                (CONTENT_LENGTH, metadata.len().to_string()),
-            ],
+            [(CONTENT_LENGTH, metadata.len().to_string())],
             Body::from_stream(ReaderStream::new(file)),
         )
             .into_response())
