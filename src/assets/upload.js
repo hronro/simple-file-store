@@ -92,6 +92,8 @@ function normalUpload() {
 
 	const xhr = new XMLHttpRequest()
 
+	const timeStart = performance.now()
+
 	let uploadProgress = 0
 	let stopProgressBarAnimation = null
 
@@ -121,7 +123,8 @@ function normalUpload() {
 	xhr.onreadystatechange = function handleXhrEnd() {
 		if (xhr.readyState === XMLHttpRequest.DONE) {
 			if (xhr.status === 200) {
-				alert('Upload complete!')
+				const timeEnd = performance.now()
+				alert(`Upload complete in ${prettyTime(timeEnd - timeStart)}!`)
 				window.location.reload()
 			} else {
 				alert('Upload failed: ' + xhr.statusText)
@@ -137,6 +140,8 @@ async function resumableUpload() {
 	const uriPrefix = uploadFormElement.getAttribute('action').replace('/files/', '/upload/')
 	/** @type File */
 	const file = fileInputElement.files[0]
+
+	const timeStart = performance.now()
 
 	let uploadProgress = 0
 	let stopProgressBarAnimation = startProgressBarAnimation({
@@ -211,12 +216,16 @@ async function resumableUpload() {
 					uploadProgress = completedChunks / totalChunks
 
 					if (uploadResult.allChunksCompleted) {
+						const timeEnd = performance.now()
+
 						if (stopProgressBarAnimation != null) {
 							stopProgressBarAnimation()
 							stopProgressBarAnimation = null
 						}
+
 						hideUploadProgress()
-						alert('Upload complete!')
+
+						alert(`Upload complete in ${prettyTime(timeEnd - timeStart)}!`)
 						window.location.reload()
 					}
 
@@ -263,6 +272,10 @@ function startProgressBarAnimation(options) {
 	}
 }
 
+/**
+ * Format a file size in bytes to a human-readable string.
+ * @param {number} fileSizeInBytes - The file size in bytes.
+ */
 function prettyFileSize(fileSizeInBytes) {
 	if (fileSizeInBytes == null) {
 		return 'unknown size'
@@ -282,6 +295,67 @@ function prettyFileSize(fileSizeInBytes) {
 	if (fileSizeInBytes < 1024 * 1024 * 1024 * 1024 * 1024) {
 		return (fileSizeInBytes / (1024 * 1024 * 1024 * 1024)).toFixed(2) + ' TiB'
 	}
+}
+
+/**
+ * Format a time in milliseconds to a human-readable string.
+ * @param {number} timeInMs - The time in milliseconds.
+ */
+function prettyTime(timeInMs) {
+	let days = 0
+	let hours = 0
+	let minutes = 0
+	let seconds = 0
+	let milliseconds = 0
+
+	if (timeInMs >= 24 * 60 * 60 * 1000) {
+		days = Math.floor(timeInMs / (24 * 60 * 60 * 1000))
+		timeInMs -= days * (24 * 60 * 60 * 1000)
+	}
+	if (timeInMs >= 60 * 60 * 1000) {
+		hours = Math.floor(timeInMs / (60 * 60 * 1000))
+		timeInMs -= hours * (60 * 60 * 1000)
+	}
+	if (timeInMs >= 60 * 1000) {
+		minutes = Math.floor(timeInMs / (60 * 1000))
+		timeInMs -= minutes * (60 * 1000)
+	}
+	if (timeInMs >= 1000) {
+		seconds = Math.floor(timeInMs / 1000)
+		timeInMs -= seconds * 1000
+	}
+	milliseconds = Math.round(timeInMs)
+
+	/** @type string[] */
+	const parts = []
+
+	if (days > 1) {
+		parts.push(`${days} days`)
+	} else if (days === 1) {
+		parts.push(`${days} day`)
+	}
+	if (hours > 1) {
+		parts.push(`${hours} hours`)
+	} else if (hours === 1) {
+		parts.push(`${hours} hour`)
+	}
+	if (minutes > 1) {
+		parts.push(`${minutes} minutes`)
+	} else if (minutes === 1) {
+		parts.push(`${minutes} minute`)
+	}
+	if (seconds > 1) {
+		parts.push(`${seconds} seconds`)
+	} else if (seconds === 1) {
+		parts.push(`${seconds} second`)
+	}
+	if (milliseconds > 1) {
+		parts.push(`${milliseconds} milliseconds`)
+	} else if (milliseconds === 1) {
+		parts.push(`${milliseconds} millisecond`)
+	}
+
+	return parts.join(' ')
 }
 
 /**
