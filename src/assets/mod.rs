@@ -1,8 +1,13 @@
 use axum::extract::Path;
-use axum::http::{StatusCode, header::CONTENT_TYPE};
+use axum::http::{
+    StatusCode,
+    header::{CACHE_CONTROL, CONTENT_TYPE},
+};
 use axum::response::IntoResponse;
 
 pub const ROUTE_PATH: &str = "/_assets/{asset}";
+
+const CACHE_CONTROL_VALUE: &str = "max-age=604800"; // Cache for 1 week
 
 pub async fn get(Path(path): Path<String>) -> impl IntoResponse {
     /// Generate a response based on the file type.
@@ -20,7 +25,10 @@ pub async fn get(Path(path): Path<String>) -> impl IntoResponse {
         ("css", $path:expr) => {
             (
                 StatusCode::OK,
-                [(CONTENT_TYPE, "text/css; charset=utf-8")],
+                [
+                    (CONTENT_TYPE, "text/css; charset=utf-8"),
+                    (CACHE_CONTROL, CACHE_CONTROL_VALUE),
+                ],
                 include_str!($path),
             )
                 .into_response()
@@ -29,7 +37,10 @@ pub async fn get(Path(path): Path<String>) -> impl IntoResponse {
         ("js", $path:expr) => {
             (
                 StatusCode::OK,
-                [(CONTENT_TYPE, "text/javascript; charset=utf-8")],
+                [
+                    (CONTENT_TYPE, "text/javascript; charset=utf-8"),
+                    (CACHE_CONTROL, CACHE_CONTROL_VALUE),
+                ],
                 include_str!($path),
             )
                 .into_response()
