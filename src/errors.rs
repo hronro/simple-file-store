@@ -4,10 +4,12 @@ use axum::extract::multipart::MultipartError;
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Json, Response};
 use rustix::io::Errno;
+use sailfish::{RenderError, TemplateOnce};
 use serde_json::json;
 use tokio::task::JoinError;
 
 use crate::html;
+use crate::templates;
 
 pub enum ServerError {
     MissingCredentials { current_uri: String },
@@ -33,15 +35,17 @@ impl IntoResponse for ServerError {
         match self {
             Self::MissingCredentials { current_uri } => (
                 StatusCode::UNAUTHORIZED,
-                Html(html::redirect::gen_html_redirect(
-                    html::redirect::HtmlRedirectConfig {
+                Html(
+                    templates::Redirect {
                         success: false,
                         url: format!("/login?redirect={current_uri}").as_str(),
                         title: "Missing Credentials",
                         message: "It seems you havan't login yet. Please login first.",
                         ..Default::default()
-                    },
-                )),
+                    }
+                    .render_once()
+                    .unwrap(),
+                ),
             )
                 .into_response(),
 
@@ -49,29 +53,33 @@ impl IntoResponse for ServerError {
                 if let Some(redirect_uri) = redirect_uri {
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        Html(html::redirect::gen_html_redirect(
-                            html::redirect::HtmlRedirectConfig {
+                        Html(
+                            templates::Redirect {
                                 success: false,
                                 url: format!("/login?redirect={redirect_uri}").as_str(),
                                 title: "Token Creation Error",
                                 message: "Failed to create access token. Please try login again.",
                                 ..Default::default()
-                            },
-                        )),
+                            }
+                            .render_once()
+                            .unwrap(),
+                        ),
                     )
                         .into_response()
                 } else {
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        Html(html::redirect::gen_html_redirect(
-                            html::redirect::HtmlRedirectConfig {
+                        Html(
+                            templates::Redirect {
                                 success: false,
                                 url: "/login",
                                 title: "Token Creation Error",
                                 message: "Failed to create access token. Please try login again.",
                                 ..Default::default()
-                            },
-                        )),
+                            }
+                            .render_once()
+                            .unwrap(),
+                        ),
                     )
                         .into_response()
                 }
@@ -79,15 +87,17 @@ impl IntoResponse for ServerError {
 
             Self::InvalidToken { current_uri } => (
                 StatusCode::UNAUTHORIZED,
-                Html(html::redirect::gen_html_redirect(
-                    html::redirect::HtmlRedirectConfig {
+                Html(
+                    templates::Redirect {
                         success: false,
                         url: format!("/login?redirect={current_uri}").as_str(),
                         title: "Invalid Token",
                         message: "The access token is invalid. Please login again.",
                         ..Default::default()
-                    },
-                )),
+                    }
+                    .render_once()
+                    .unwrap(),
+                ),
             )
                 .into_response(),
 
@@ -178,11 +188,15 @@ impl IntoResponse for ServerError {
 
             Self::Custom { status, message } => (
                 status,
-                Html(html::error::gen_html_error(html::error::HtmlErrorConfig {
-                    status,
-                    message: message.as_str(),
-                    ..Default::default()
-                })),
+                Html(
+                    templates::Error {
+                        status,
+                        message: message.as_str(),
+                        ..Default::default()
+                    }
+                    .render_once()
+                    .unwrap(),
+                ),
             )
                 .into_response(),
         }
@@ -209,5 +223,10 @@ impl From<MultipartError> for ServerError {
             status: multipart_error.status(),
             message: multipart_error.body_text(),
         }
+    }
+}
+impl From<RenderError> for ServerError {
+    fn from(render_error: RenderError) -> Self {
+        ServerError::InternalError(render_error.to_string())
     }
 }

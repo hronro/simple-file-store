@@ -1,0 +1,43 @@
+<% let time = self.time.unwrap_or(3); %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="refresh" content="<%= time %>;url=<%= self.url %>">
+<title><%= self.title %></title>
+<link rel="stylesheet" href="/_assets/reset.css">
+<link rel="stylesheet" href="/_assets/redirect.css">
+<style>
+	.redirect-progress::after {
+		animation: progress <%= time %>s linear forwards;
+	}
+</style>
+</head>
+<body>
+<div class="circles">
+	<div class="circle circle-1"></div>
+	<div class="circle circle-2"></div>
+</div>
+
+<main class="redirect-container">
+	<div class="redirect-card">
+			<div class="status-message <%= if self.success { "success" } else { "error" } %>">
+			<div class="status-icon">
+				<%= self.icon.unwrap_or(if self.success { "✓" } else { "✕" }) %>
+			</div>
+			<h1><%= self.title %></h1>
+			<p><%= self.message %></p>
+		</div>
+
+		<div class="redirect-progress"></div>
+
+		<a autofocus href="<%= self.url %>" class="redirect-link">Continue</a>
+
+		<div class="redirect-footer">
+			Redirecting automatically in <%= time %> seconds...
+		</div>
+	</div>
+</main>
+</body>
+</html>

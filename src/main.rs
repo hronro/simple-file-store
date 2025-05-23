@@ -9,9 +9,10 @@ mod config;
 mod errors;
 mod files;
 mod hello_world;
+mod home;
 mod html;
-mod index;
 mod login;
+mod templates;
 mod upload;
 
 #[tokio::main]
@@ -20,7 +21,7 @@ async fn main() -> Result<()> {
         .route(assets::ROUTE_PATH, get(assets::get))
         .route(hello_world::ROUTE_PATH, get(hello_world::get))
         .route(login::ROUTE_PATH, get(login::get).post(login::post))
-        .route(index::ROUTE_PATH, get(index::get))
+        .route(home::ROUTE_PATH, get(home::get))
         .route(files::ROUTE_PATH_ROOT, get(files::root_get))
         .route(
             files::ROUTE_PATH_ROOT_EMPTY,

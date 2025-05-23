@@ -1,31 +1,11 @@
-use axum::response::Html;
-
-use crate::auth::Claims;
-use crate::files;
-
-pub const ROUTE_PATH: &str = "/";
-
-pub async fn get(claims: Option<Claims>) -> Html<String> {
-    let user_html = match claims {
-        Some(claims) => format!(
-            r###"<div class="user-info"><div class="user-avatar">{}</div><span>{}</span></div>"###,
-            claims.sub.get(0..1).unwrap().to_uppercase(),
-            claims.sub
-        ),
-        None => "".to_string(),
-    };
-
-    let jump_url = files::ROUTE_PATH_ROOT;
-
-    Html(format!(
-        r###"<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Welcome | File Management System</title>
 <link rel="stylesheet" href="/_assets/reset.css">
-<link rel="stylesheet" href="/_assets/index.css">
+<link rel="stylesheet" href="/_assets/home.css">
 </head>
 <body>
 <!-- Background animation circles -->
@@ -40,7 +20,14 @@ pub async fn get(claims: Option<Claims>) -> Html<String> {
 <header class="header">
 	<div class="header-content">
 		<h1>File Management System</h1>
-		{user_html}
+		<% if let Some(claims) = self.claims { %>
+			<div class="user-info">
+				<div class="user-avatar">
+					<%= claims.sub.get(0..1).unwrap().to_uppercase() %>
+				</div>
+				<span><%= claims.sub %></span>
+			</div>
+		<% } %>
 	</div>
 </header>
 
@@ -100,7 +87,7 @@ pub async fn get(claims: Option<Claims>) -> Html<String> {
 
 	<!-- Call to Action -->
 	<section class="cta-container">
-		<a href="{jump_url}" class="cta-button">
+		<a href="<%= self.jump_url %>" class="cta-button">
 			Explore Your Files
 		</a>
 	</section>
@@ -111,6 +98,4 @@ pub async fn get(claims: Option<Claims>) -> Html<String> {
 	<p>© 2025 File Management System. All rights reserved.</p>
 </footer>
 </body>
-</html>"###
-    ))
-}
+</html>

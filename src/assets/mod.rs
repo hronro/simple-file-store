@@ -58,7 +58,7 @@ pub async fn get(Path(path): Path<String>) -> impl IntoResponse {
     file_matches!(
         ("css", "error.css"),
         ("css", "files.css"),
-        ("css", "index.css"),
+        ("css", "home.css"),
         ("css", "login.css"),
         ("css", "redirect.css"),
         ("css", "reset.css"),

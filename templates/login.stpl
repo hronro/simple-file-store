@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login | Welcome Back</title>
+<link rel="stylesheet" href="/_assets/reset.css">
+<link rel="stylesheet" href="/_assets/login.css">
+</head>
+<body>
+<main class="login-container">
+	<div class="login-card">
+		<div class="login-decoration">
+			<div class="circles">
+				<div class="circle circle-1"></div>
+				<div class="circle circle-2"></div>
+				<div class="circle circle-3"></div>
+			</div>
+			<h2 class="welcome-message">Welcome<br>Back!</h2>
+		</div>
+
+		<div class="login-content">
+			<header>
+				<h1>Sign In</h1>
+				<p>Please login to access your account</p>
+			</header>
+
+			<form class="login-form" action="<%= self.url %><% if let Some(redirect) = self.redirect { %><%= redirect %><% } %>" method="post">
+				<div class="form-field">
+					<label for="username">Username</label>
+					<div class="input-wrapper">
+						<input type="text" id="username" name="username" placeholder="yourusername" autofocus  required>
+						<span class="input-icon">👤</span>
+					</div>
+				</div>
+
+				<div class="form-field">
+					<label for="password">Password</label>
+					<div class="input-wrapper">
+						<input type="password" id="password" name="password" placeholder="••••••••" required>
+						<span class="input-icon">🔒</span>
+					</div>
+				</div>
+
+				<button type="submit" class="login-button">Sign In</button>
+			</form>
+		</div>
+	</div>
+</main>
+</body>
+</html>

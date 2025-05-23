@@ -1,0 +1,40 @@
+<% let title = self.title.unwrap_or(self.status.canonical_reason().unwrap_or("Error")); %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title><%= title %></title>
+<link rel="stylesheet" href="/_assets/reset.css">
+<link rel="stylesheet" href="/_assets/error.css">
+</head>
+<body>
+<div class="circles">
+	<div class="circle circle-1"></div>
+	<div class="circle circle-2"></div>
+</div>
+
+<main class="main-container">
+	<div class="error-card">
+		<div class="error-header">
+			<div class="error-pattern"></div>
+			<div class="error-code"><%= self.status.as_u16() %></div>
+			<div class="error-title"><%= title %></div>
+		</div>
+
+		<div class="error-body">
+			<div class="error-message"><%= self.message %></div>
+
+			<div class="actions">
+				<a href="/" class="btn btn-primary">Go to Homepage</a>
+				<% if self.display_try_again_button { %>
+					<a href="#" onclick="window.location.reload()" class="btn btn-secondary">Try Again</a>
+				<% } else { %>
+					<a href="javascript:history.back()" class="btn btn-secondary">Go Back</a>
+				<% } %>
+			</div>
+		</div>
+	</div>
+</main>
+</body>
+</html>
