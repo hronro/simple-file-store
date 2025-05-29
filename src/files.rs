@@ -1,4 +1,4 @@
-use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+use std::io::Error as IoError;
 
 use axum::body::Body;
 use axum::extract::{Multipart, OriginalUri, Path};
@@ -124,7 +124,7 @@ pub async fn post(
 
     let file_path = dir_path.join(format!("{file_name}.form-upload"));
 
-    let body_with_io_error = field.map_err(|err| IoError::new(IoErrorKind::Other, err));
+    let body_with_io_error = field.map_err(IoError::other);
     let body_reader = StreamReader::new(body_with_io_error);
     pin_mut!(body_reader);
     let mut file = BufWriter::new(fs::File::create(&file_path).await?);
