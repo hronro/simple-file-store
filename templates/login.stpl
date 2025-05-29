@@ -25,7 +25,7 @@
 				<p>Please login to access your account</p>
 			</header>
 
-			<form class="login-form" action="<%= self.url %><% if let Some(redirect) = self.redirect { %><%= redirect %><% } %>" method="post">
+			<form class="login-form" action="<%= self.url %><% if let Some(redirect) = self.redirect { %>?redirect=<%= redirect %><% } %>" method="post">
 				<div class="form-field">
 					<label for="username">Username</label>
 					<div class="input-wrapper">
