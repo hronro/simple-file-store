@@ -200,7 +200,7 @@ impl UserConfig {
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--help" | "-h" => {
-                    println!(
+                    print!(
                         "Usage: simple-file-store [OPTIONS]\n\n\
                         --listen, -l <ADDR>\t\tListen address (default: [::]:8080)\n\
                         --store-path, -p <PATH>\t\tPath to store files (default: current directory)\n\
@@ -222,8 +222,7 @@ impl UserConfig {
                         SFS_SECRET\t\tSecret for JWT\n\
                         SFS_TOKEN_EXP\t\tToken expiry in seconds\n\
                         SFS_TLS_CERT\t\tPath to TLS certificate file\n\
-                        SFS_TLS_KEY\t\tPath to TLS key file\n
-                        "
+                        SFS_TLS_KEY\t\tPath to TLS key file\n"
                     );
                     std::process::exit(0);
                 }
