@@ -1,11 +1,13 @@
 use std::env::current_dir;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use anyhow::{Context, Result, bail};
 use rand::distr::{Alphanumeric, SampleString};
 use rand::rng;
+use tokio_rustls::rustls::ServerConfig as TlsServerConfig;
+use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 
 const VERSION: &str = match std::option_env!("CARGO_PKG_VERSION") {
     Some(version) => version,
@@ -24,6 +26,9 @@ pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
     }
 });
 
+/// The application configuration, which is converted from [`UserConfig`].
+/// We will also check the values of the configuration here,
+/// so that we can ensure they are valid before starting the application.
 #[derive(Debug)]
 pub struct Config {
     pub listen: SocketAddr,
@@ -33,6 +38,7 @@ pub struct Config {
     pub password: String,
     pub secret: String,
     pub token_expiry: u64,
+    pub tls: Option<Arc<TlsServerConfig>>,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -44,6 +50,7 @@ impl Default for Config {
             password: "password".to_string(),
             secret: Alphanumeric.sample_string(&mut rng(), 16),
             token_expiry: 60 * 60 * 24, // 24 hours
+            tls: None,
         }
     }
 }
@@ -93,10 +100,39 @@ impl Config {
             config.token_expiry = token_expiry;
         }
 
+        match (user_config.tls_cert, user_config.tls_key) {
+            (Some(cert_path), Some(key_path)) => {
+                let cert = CertificateDer::from_pem_file(cert_path)
+                    .context("Failed to load TLS certificate")?;
+
+                let key =
+                    PrivateKeyDer::from_pem_file(key_path).context("Failed to load TLS key")?;
+
+                let mut tls_server_config = TlsServerConfig::builder()
+                    .with_no_client_auth()
+                    .with_single_cert(vec![cert], key)
+                    .context("Bad certificate/key")?;
+
+                tls_server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+                config.tls = Some(Arc::new(tls_server_config));
+            }
+
+            (None, None) => {}
+
+            (Some(_), None) => bail!("TLS certificate specified without key"),
+
+            (None, Some(_)) => bail!("TLS key specified without certificate"),
+        }
+
         Ok(config)
     }
 }
 
+/// The configuration that user can set via environment variables or command line arguments.
+/// `UserConfig` will eventually convert to the [`Config`].
+/// NOTE: we do not check the values of the environment variables or command line arguments,
+/// so they can be invalid. Only parsing errors will be reported.
 #[derive(Default)]
 pub struct UserConfig {
     listen: Option<String>,
@@ -106,6 +142,8 @@ pub struct UserConfig {
     password: Option<String>,
     secret: Option<String>,
     token_expiry: Option<String>,
+    tls_cert: Option<String>,
+    tls_key: Option<String>,
 }
 impl UserConfig {
     /// Get the configuration from the environment variables.
@@ -140,6 +178,14 @@ impl UserConfig {
             config.token_expiry = Some(token_expiry);
         }
 
+        if let Ok(tls_cert) = std::env::var("SFS_TLS_CERT") {
+            config.tls_cert = Some(tls_cert);
+        }
+
+        if let Ok(tls_key) = std::env::var("SFS_TLS_KEY") {
+            config.tls_key = Some(tls_key);
+        }
+
         config
     }
 
@@ -163,6 +209,8 @@ impl UserConfig {
                         --password, -w <PASSWORD>\tPassword for authentication (default: password)\n\
                         --secret, -x <SECRET>\t\tSecret for JWT (default: random 16 characters)\n\
                         --token-exp, -e <SECONDS>\tToken expiry in seconds (default: 24 hours)\n\
+                        --tls-cert, -C <CERT>\t\tPath to TLS certificate file\n\
+                        --tls-key, -K <KEY>\t\tPath to TLS key file\n\
                         --version, -v\t\t\tPrint version information\n\
                         --help, -h\t\t\tPrint this help message\n\n\
                         All options are optional, they can also be set using the following environment variables:\n\
@@ -172,7 +220,9 @@ impl UserConfig {
                         SFS_USERNAME\t\tUsername for authentication\n\
                         SFS_PASSWORD\t\tPassword for authentication\n\
                         SFS_SECRET\t\tSecret for JWT\n\
-                        SFS_TOKEN_EXP\t\tToken expiry in seconds\n
+                        SFS_TOKEN_EXP\t\tToken expiry in seconds\n\
+                        SFS_TLS_CERT\t\tPath to TLS certificate file\n\
+                        SFS_TLS_KEY\t\tPath to TLS key file\n
                         "
                     );
                     std::process::exit(0);
@@ -187,38 +237,53 @@ impl UserConfig {
                     if config.listen.is_some() {
                         bail!("--listen can only be specified once");
                     }
-                    let listen = args.next().context("--listen requires an argument")?;
+                    let listen = args.next().context("--listen/-l requires an argument")?;
                     config.listen = Some(listen);
                 }
 
                 "--store-path" | "-p" => {
-                    let store_path = args.next().context("--store-path requires an argument")?;
+                    let store_path = args
+                        .next()
+                        .context("--store-path/-p requires an argument")?;
                     config.store_path = Some(store_path);
                 }
 
                 "--chunk-size" | "-s" => {
-                    let chunk_size = args.next().context("--chunk-size requires an argument")?;
+                    let chunk_size = args
+                        .next()
+                        .context("--chunk-size/-s requires an argument")?;
                     config.chunk_size = Some(chunk_size);
                 }
 
                 "--username" | "-u" => {
-                    let username = args.next().context("--username requires an argument")?;
+                    let username = args.next().context("--username/-u requires an argument")?;
                     config.username = Some(username);
                 }
 
                 "--password" | "-w" => {
-                    let password = args.next().context("--password requires an argument")?;
+                    let password = args.next().context("--password/-w requires an argument")?;
                     config.password = Some(password);
                 }
 
                 "--secret" | "-x" => {
-                    let secret = args.next().context("--secret requires an argument")?;
+                    let secret = args.next().context("--secret/-x requires an argument")?;
                     config.secret = Some(secret);
                 }
 
                 "--token-exp" | "-e" => {
-                    let token_expiry = args.next().context("--token-exp requires an argument")?;
+                    let token_expiry =
+                        args.next().context("--token-exp/-e requires an argument")?;
                     config.token_expiry = Some(token_expiry);
+                }
+
+                "--tls-cert" | "-C" => {
+                    let tls_cert = args.next().context("--tls-cert/-C requires an argument")?;
+                    config.tls_cert = Some(tls_cert);
+                }
+
+                "--tls-key" | "-K" => {
+                    let tls_key = args.next().context("--tls-key/-K requires an argument")?;
+                    config.tls_key = Some(tls_key);
                 }
 
                 _ => bail!("Unknown argument: {}", arg),
@@ -259,6 +324,14 @@ impl UserConfig {
 
         if let Some(token_expiry) = cli_config.token_expiry {
             config.token_expiry = Some(token_expiry);
+        }
+
+        if let Some(tls_cert) = cli_config.tls_cert {
+            config.tls_cert = Some(tls_cert);
+        }
+
+        if let Some(tls_key) = cli_config.tls_key {
+            config.tls_key = Some(tls_key);
         }
 
         Ok(config)

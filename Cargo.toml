@@ -16,6 +16,8 @@ axum = { version = "0.8", features = ["multipart"] }
 axum-extra = { version = "0.10", default-features = false, features = ["typed-header"] }
 form_urlencoded = "1"
 futures = "0.3"
+hyper = "1"
+hyper-util = { version = "0.1", features = ["http2"] }
 jsonwebtoken = "9"
 mime_guess = "2"
 rand = "0.9"
@@ -27,4 +29,6 @@ serde_repr = "0.1"
 size = "0.5"
 time = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 tokio-util = { version = "0.7", features = ["io"] }
+tower-service = "0.3"

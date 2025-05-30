@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add `Content-Type` HTTP header for user uploaded files, guessing the MIME type based on the file extension.
-- Add HTTP cache for built-in front-end assets.
-- Add time counter for file upload.
+- `Content-Type` HTTP header for user uploaded files, guessing the MIME type based on the file extension.
+- HTTP cache for built-in front-end assets.
+- time counter for file upload.
+- TLS support.
 
 ### Changed
 

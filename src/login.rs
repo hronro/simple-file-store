@@ -3,7 +3,6 @@ use std::time::SystemTime;
 use axum::extract::{Form, Query};
 use axum::http::{StatusCode, Uri, header::SET_COOKIE};
 use axum::response::{Html, IntoResponse};
-use form_urlencoded::byte_serialize as encode_uri;
 use jsonwebtoken::{Header, encode};
 use sailfish::TemplateOnce;
 use serde::Deserialize;

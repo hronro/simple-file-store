@@ -1,7 +1,13 @@
 use anyhow::Result;
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, Request};
 use axum::http::{StatusCode, Uri};
 use axum::{Router, response::Html, routing::get, serve};
+use hyper::body::Incoming;
+use hyper::service::service_fn as hyper_service_fn;
+use hyper_util::rt::{TokioExecutor, TokioIo};
+use tokio::spawn;
+use tokio_rustls::TlsAcceptor;
+use tower_service::Service;
 
 mod assets;
 mod auth;
@@ -53,7 +59,34 @@ async fn main() -> Result<()> {
 
     let listener = tokio::net::TcpListener::bind(config::CONFIG.listen).await?;
 
-    serve(listener, app).await?;
+    if let Some(ref tls) = config::CONFIG.tls {
+        let tls_acceptor = TlsAcceptor::from(tls.clone());
+
+        loop {
+            let app = app.clone();
+            let tls_acceptor = tls_acceptor.clone();
+
+            if let Ok((tcp_stream, _addr)) = listener.accept().await {
+                spawn(async move {
+                    let Ok(stream) = tls_acceptor.accept(tcp_stream).await else {
+                        return;
+                    };
+
+                    let stream = TokioIo::new(stream);
+
+                    let hyper_service = hyper_service_fn(move |request: Request<Incoming>| {
+                        app.clone().call(request)
+                    });
+
+                    let _ = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+                        .serve_connection_with_upgrades(stream, hyper_service)
+                        .await;
+                });
+            };
+        }
+    } else {
+        serve(listener, app).await?;
+    }
 
     Ok(())
 }
