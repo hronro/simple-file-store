@@ -13,6 +13,7 @@ A lightweight, high-performance file storage server.
 - **Simple Authentication**: Basic username/password authentication with JWT tokens
 - **Configurable**: Easily configure via environment variables or command-line arguments
 - **Resumable File Uploads**: Support for large file uploads with configurable chunk size
+- **TLS Support**: Built-in TLS support, without depending system TLS libraries like OpenSSL
 
 ## Getting Started
 
@@ -38,7 +39,7 @@ The run the server:
 ```
 
 By default, the server will:
-- Listen on `[::]:8080` (IPv6 and IPv4)
+- Listen on `[::]:8080` (IPv6 and IPv4) with HTTP protocol (HTTPS is disabled by default)
 - Store files in the current directory
 - Use "admin" as the default username and "password" as the default password
 
@@ -55,6 +56,8 @@ Configure Simple File Store using environment variables or command-line argument
 | `SFS_PASSWORD`      | `--password`, `-w` | Password for authentication | `password` |
 | `SFS_SECRET`        | `--secret`, `-x` | Secret for JWT | Random 16 characters |
 | `SFS_TOKEN_EXP`     | `--token-exp`, `-e` | Token expiry in seconds | 24 hours (86400) |
+| `SFS_TLS_CERT`      | `--tls-cert`, `-c` | Path to TLS certificate file | None (HTTP only) |
+| `SFS_TLS_KEY`       | `--tls-key`, `-k`  | Path to TLS private key file | None (HTTP only) |
 
 Example:
 
