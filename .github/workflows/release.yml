@@ -45,7 +45,7 @@ jobs:
           XZ_OPT=-e9 tar caf simple-file-store-${{  github.ref_name }}-${{ matrix.target }}.tar.xz simple-file-store
 
       - name: Upload Release Assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.2.1
         with:
           files: simple-file-store-${{  github.ref_name }}-${{ matrix.target }}.tar.xz
 
@@ -83,7 +83,7 @@ jobs:
           XZ_OPT=-e9 tar caf simple-file-store-${{  github.ref_name }}-${{ matrix.target }}.tar.xz simple-file-store
 
       - name: Upload Release Assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.2.1
         with:
           files: simple-file-store-${{  github.ref_name }}-${{ matrix.target }}.tar.xz
 
@@ -107,6 +107,6 @@ jobs:
   #         7z a -t7z -mx=9 simple-file-store-x86_64-pc-windows-msvc.7z simple-file-store.exe
   #
   #     - name: Upload Release Assets
-  #         uses: softprops/action-gh-release@v2
+  #         uses: softprops/action-gh-release@v2.2.1
   #         with:
   #           files: simple-file-store-x86_64-pc-windows-msvc.7z
