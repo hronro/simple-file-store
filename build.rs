@@ -6,7 +6,10 @@ use lightningcss::stylesheet::{
 use oxc::{
     allocator::Allocator as OxcAllocator,
     codegen::{Codegen as OxcCodegen, CodegenOptions as OxcCodegenOptions},
-    minifier::Minifier as OxcMinifier,
+    minifier::{
+        MangleOptions as OxcMangleOptions, Minifier as OxcMinifier,
+        MinifierOptions as OxcMinifierOptions,
+    },
     parser::Parser as OxcParser,
     span::SourceType as OxcSourceType,
 };
@@ -62,8 +65,14 @@ fn main() {
                 let allocator = OxcAllocator::default();
                 let mut parse_return =
                     OxcParser::new(&allocator, &content, OxcSourceType::cjs()).parse();
-                let minify_return = OxcMinifier::new(Default::default())
-                    .build(&allocator, &mut parse_return.program);
+                let minify_return = OxcMinifier::new(OxcMinifierOptions {
+                    mangle: Some(OxcMangleOptions {
+                        top_level: true,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+                .build(&allocator, &mut parse_return.program);
                 let minified_content = OxcCodegen::new()
                     .with_options(OxcCodegenOptions::minify())
                     .with_scoping(minify_return.scoping)
