@@ -32,3 +32,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tower-service = "0.3"
+
+[build-dependencies]
+lightningcss = "1.0.0-alpha.66"
+oxc = { version = "0.73", features = ["minifier", "codegen"] }

@@ -29,7 +29,7 @@ pub async fn get(Path(path): Path<String>) -> impl IntoResponse {
                     (CONTENT_TYPE, "text/css; charset=utf-8"),
                     (CACHE_CONTROL, CACHE_CONTROL_VALUE),
                 ],
-                include_str!($path),
+                include_str!(concat!(env!("OUT_DIR"), "/", $path)),
             )
                 .into_response()
         };
@@ -41,7 +41,7 @@ pub async fn get(Path(path): Path<String>) -> impl IntoResponse {
                     (CONTENT_TYPE, "text/javascript; charset=utf-8"),
                     (CACHE_CONTROL, CACHE_CONTROL_VALUE),
                 ],
-                include_str!($path),
+                include_str!(concat!(env!("OUT_DIR"), "/", $path)),
             )
                 .into_response()
         };

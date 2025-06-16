@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Now the front-end code files (CSS and JavaScript) are minified, which leads to a smaller binary size and faster client side loading times.
+
 ## [0.2.0]
 
 ### Added
