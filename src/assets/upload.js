@@ -21,7 +21,7 @@ const uploadProgressBarElement = document.getElementById('uploadProgressBar')
 const uploadSubmitBtnElement = document.getElementById('uploadSubmitBtn')
 
 // Enable selected file preview
-fileInputElement.onchange = function handleFilePreview(event) {
+fileInputElement.onchange = function handleFilePreview() {
 	showSelectedFilePreview()
 }
 fileInputElement.oncancel = function handleFileCancel() {
