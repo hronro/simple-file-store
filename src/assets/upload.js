@@ -179,7 +179,7 @@ async function resumableUpload() {
 	// for now let's just assume all chunks that are not completed are all not started.
 
 	const unuploadedChunkIndexes = Object.entries(meta.chunks).filter(([_, status]) => status !== 2).map(([index, _]) => parseInt(index, 10)).reverse()
-	await makePromisePool(4, () => {
+	await makePromisePool(6, () => {
 		const chunkIndex = unuploadedChunkIndexes.pop()
 
 		if (chunkIndex == null) {

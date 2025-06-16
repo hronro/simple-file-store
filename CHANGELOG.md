@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Now the front-end code files (CSS and JavaScript) are minified, which leads to a smaller binary size and faster client side loading times.
+- The number of upload worker has increased to 6 from 4, since all major browsers support a minimum of 6 parallel HTTP/1.1 connections.
 
 ## [0.2.0]
 
