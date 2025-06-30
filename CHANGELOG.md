@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Now the front-end code files (CSS and JavaScript) are minified, which leads to a smaller binary size and faster client side loading times.
+- Newlines are removed in the rendered HTML files. We use `sailfish` as the template engine, and we had already enabled the `rm_whitespace` option in `sailfish` before, but for some reason the `rm_whitespace` option does not remove newlines in the rendered HTML files. Now we switched to a forked version of `sailfish` that supports removing newlines in the rendered HTML files.
 - The number of upload worker has increased to 6 from 4, since all major browsers support a minimum of 6 parallel HTTP/1.1 connections.
 
 ## [0.2.0]

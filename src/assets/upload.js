@@ -45,11 +45,7 @@ function showSelectedFilePreview() {
 				className: 'selected-file',
 				id: 'selectedFilePreview',
 			})
-			previewContainer.innerHTML = `<div class="file-preview" id="selectedFileType">${fileType}</div>
-					<div class="file-info">
-						<div class="file-name" id="selectedFileName">${file.name}</div>
-						<div class="file-size" id="selectedFileSize">${prettyFileSize(file.size)}</div>
-					</div>`
+			previewContainer.innerHTML = `<div class="file-preview" id="selectedFileType">${fileType}</div><div class="file-info"><div class="file-name" id="selectedFileName">${file.name}</div><div class="file-size" id="selectedFileSize">${prettyFileSize(file.size)}</div></div>`
 			previewContainer.appendChild(
 				Object.assign(document.createElement('button'), {
 					type: 'button',
