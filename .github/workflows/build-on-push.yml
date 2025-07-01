@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.87
+        uses: dtolnay/rust-toolchain@1.88
         with:
           targets: ${{ matrix.target }}
 
@@ -64,7 +64,7 @@ jobs:
           echo '/usr/local/opt/gnu-tar/libexec/gnubin' >> $GITHUB_PATH
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.86
+        uses: dtolnay/rust-toolchain@1.88
         with:
           targets: ${{ matrix.target }}
 
@@ -94,7 +94,7 @@ jobs:
   #     - uses: actions/checkout@v4
   #
   #     - name: Install Rust
-  #       uses: dtolnay/rust-toolchain@1.86
+  #       uses: dtolnay/rust-toolchain@1.88
   #
   #     - name: Build
   #       timeout-minutes: 60
