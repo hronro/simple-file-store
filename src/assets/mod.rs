@@ -46,6 +46,54 @@ pub async fn get(Path(path): Path<String>) -> impl IntoResponse {
                 .into_response()
         };
 
+        ("ico", $path:expr) => {
+            (
+                StatusCode::OK,
+                [
+                    (CONTENT_TYPE, "image/x-icon"),
+                    (CACHE_CONTROL, CACHE_CONTROL_VALUE),
+                ],
+                include_bytes!($path),
+            )
+                .into_response()
+        };
+
+        ("png", $path:expr) => {
+            (
+                StatusCode::OK,
+                [
+                    (CONTENT_TYPE, "image/png"),
+                    (CACHE_CONTROL, CACHE_CONTROL_VALUE),
+                ],
+                include_bytes!($path),
+            )
+                .into_response()
+        };
+
+        ("jpeg", $path:expr) => {
+            (
+                StatusCode::OK,
+                [
+                    (CONTENT_TYPE, "image/jpeg"),
+                    (CACHE_CONTROL, CACHE_CONTROL_VALUE),
+                ],
+                include_bytes!($path),
+            )
+                .into_response()
+        };
+
+        ("svg", $path:expr) => {
+            (
+                StatusCode::OK,
+                [
+                    (CONTENT_TYPE, "image/svg+xml; charset=utf-8"),
+                    (CACHE_CONTROL, CACHE_CONTROL_VALUE),
+                ],
+                include_bytes!($path),
+            )
+                .into_response()
+        };
+
         ($other:tt, $path:expr) => {
             compile_error!(concat!(
                 "Unsupported file type: ",
@@ -56,6 +104,9 @@ pub async fn get(Path(path): Path<String>) -> impl IntoResponse {
     }
 
     file_matches!(
+        ("ico", "favicon.ico"),
+        ("png", "favicon.png"),
+        ("svg", "favicon.svg"),
         ("css", "error.css"),
         ("css", "files.css"),
         ("css", "home.css"),

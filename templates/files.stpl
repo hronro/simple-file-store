@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>File Explorer</title>
+<link rel="icon" href="/_assets/favicon.ico" sizes="48x48">
+<link rel="icon" href="/_assets/favicon.svg" sizes="any" type="image/svg+xml">
 <link rel="stylesheet" href="/_assets/reset.css">
 <link rel="stylesheet" href="/_assets/files.css">
 <script defer src="/_assets/upload.js"></script>

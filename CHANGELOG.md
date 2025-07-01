@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Website favicon.
+
 ### Changed
 
 - Now the front-end code files (CSS and JavaScript) are minified, which leads to a smaller binary size and faster client side loading times.
