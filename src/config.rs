@@ -20,7 +20,7 @@ pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
     match cfg {
         Ok(c) => c,
         Err(err) => {
-            eprintln!("Error loading configuration: {}", err);
+            eprintln!("Error loading configuration: {err}");
             std::process::exit(1);
         }
     }
@@ -228,7 +228,7 @@ impl UserConfig {
                 }
 
                 "--version" | "-v" => {
-                    println!("version {}", VERSION);
+                    println!("version {VERSION}");
                     std::process::exit(0);
                 }
 
