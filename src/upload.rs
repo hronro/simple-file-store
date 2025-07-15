@@ -8,13 +8,16 @@ use axum::body::Bytes;
 use axum::extract::Path;
 use axum::http::{StatusCode, header::HeaderMap};
 use axum::response::{IntoResponse, Json};
-use rustix::fd::AsFd;
-use rustix::fs::{FallocateFlags, FlockOperation, fallocate, flock};
-use rustix::io::pwrite;
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use tokio::fs;
 use tokio::task::spawn_blocking;
+
+#[cfg(not(windows))]
+use rustix::fd::AsFd;
+#[cfg(not(windows))]
+use rustix::fs::{FallocateFlags, fallocate};
 
 use crate::auth::Claims;
 use crate::config::CONFIG;
@@ -126,7 +129,7 @@ impl ResumableUploadedFileMeta {
                     message: err.to_string(),
                 })?;
 
-            flock(meta_file.as_fd(), FlockOperation::LockExclusive)?;
+            meta_file.lock_exclusive()?;
 
             let meta_file_for_read = StdFile::open(&meta_file_path)?;
             let mut meta = Self::read_from_file_sync(&meta_file_for_read)?;
@@ -134,7 +137,7 @@ impl ResumableUploadedFileMeta {
             let new_meta_file_content = serde_json::to_vec(&meta).unwrap();
             meta_file.write_all(&new_meta_file_content)?;
 
-            flock(meta_file.as_fd(), FlockOperation::Unlock)?;
+            FileExt::unlock(&meta_file)?;
 
             Ok(())
         })
@@ -187,13 +190,21 @@ pub async fn post(
     );
     let upload_file_path = file_path.with_file_name(upload_file_name);
     let upload_file = fs::File::create(&upload_file_path).await?;
+    
     spawn_blocking(move || {
-        fallocate(
-            upload_file.as_fd(),
-            FallocateFlags::empty(),
-            0,
-            request.size,
-        )
+        #[cfg(not(windows))]
+        {
+            fallocate(
+                upload_file.as_fd(),
+                FallocateFlags::empty(),
+                0,
+                request.size,
+            )
+        }
+        #[cfg(windows)]
+        {
+            upload_file.set_len(request.size)
+        }
     })
     .await??;
 
@@ -318,6 +329,9 @@ pub async fn put(
 #[cfg(not(windows))]
 #[inline]
 fn file_seek_write_all(file: &StdFile, offset: u64, data: &[u8]) -> Result<(), ServerError> {
+    use rustix::fd::AsFd;
+    use rustix::io::pwrite;
+    
     let mut total_written = 0;
 
     while total_written < data.len() {
@@ -331,6 +345,7 @@ fn file_seek_write_all(file: &StdFile, offset: u64, data: &[u8]) -> Result<(), S
 
     Ok(())
 }
+
 #[cfg(windows)]
 #[inline]
 fn file_seek_write_all(file: &StdFile, offset: u64, data: &[u8]) -> Result<(), ServerError> {
