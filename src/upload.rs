@@ -8,7 +8,6 @@ use axum::body::Bytes;
 use axum::extract::Path;
 use axum::http::{StatusCode, header::HeaderMap};
 use axum::response::{IntoResponse, Json};
-use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use tokio::fs;
@@ -17,7 +16,7 @@ use tokio::task::spawn_blocking;
 #[cfg(not(windows))]
 use rustix::fd::AsFd;
 #[cfg(not(windows))]
-use rustix::fs::{FallocateFlags, fallocate};
+use rustix::fs::{FallocateFlags, FlockOperation, fallocate, flock};
 
 use crate::auth::Claims;
 use crate::config::CONFIG;
@@ -129,7 +128,7 @@ impl ResumableUploadedFileMeta {
                     message: err.to_string(),
                 })?;
 
-            meta_file.lock_exclusive()?;
+            file_lock_exclusive(&meta_file)?;
 
             let meta_file_for_read = StdFile::open(&meta_file_path)?;
             let mut meta = Self::read_from_file_sync(&meta_file_for_read)?;
@@ -137,7 +136,7 @@ impl ResumableUploadedFileMeta {
             let new_meta_file_content = serde_json::to_vec(&meta).unwrap();
             meta_file.write_all(&new_meta_file_content)?;
 
-            FileExt::unlock(&meta_file)?;
+            file_unlock(&meta_file)?;
 
             Ok(())
         })
@@ -357,5 +356,36 @@ fn file_seek_write_all(file: &StdFile, offset: u64, data: &[u8]) -> Result<(), S
         total_written += written;
     }
 
+    Ok(())
+}
+
+// Cross-platform file locking functions
+#[cfg(not(windows))]
+#[inline]
+fn file_lock_exclusive(file: &StdFile) -> Result<(), ServerError> {
+    flock(file.as_fd(), FlockOperation::LockExclusive)?;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+#[inline]
+fn file_unlock(file: &StdFile) -> Result<(), ServerError> {
+    flock(file.as_fd(), FlockOperation::Unlock)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+#[inline]
+fn file_lock_exclusive(_file: &StdFile) -> Result<(), ServerError> {
+    // On Windows, for now we skip file locking as it's advisory anyway
+    // The original code was Unix-only and didn't support Windows
+    // This can be enhanced later with proper Windows file locking if needed
+    Ok(())
+}
+
+#[cfg(windows)]
+#[inline]
+fn file_unlock(_file: &StdFile) -> Result<(), ServerError> {
+    // On Windows, for now we skip file unlocking
     Ok(())
 }

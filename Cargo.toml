@@ -15,7 +15,7 @@ anyhow = "1"
 axum = { version = "0.8", features = ["multipart"] }
 axum-extra = { version = "0.10", default-features = false, features = ["typed-header"] }
 form_urlencoded = "1"
-fs2 = "0.4"
+
 futures = "0.3"
 hyper = "1"
 hyper-util = { version = "0.1", features = ["http2"] }
