@@ -15,6 +15,11 @@ A lightweight, high-performance file storage server.
 - **Resumable File Uploads**: Support for large file uploads with configurable chunk size
 - **TLS Support**: Built-in TLS support, without depending system TLS libraries like OpenSSL
 
+## Screenshots
+
+![Screenshot 0](https://raw.githubusercontent.com/hronro/simple-file-store/refs/heads/media/screenshots/Screenshot%200.avif)
+![Screenshot 1](https://raw.githubusercontent.com/hronro/simple-file-store/refs/heads/media/screenshots/Screenshot%201.avif)
+
 ## Getting Started
 
 ### Installation
