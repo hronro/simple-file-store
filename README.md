@@ -37,7 +37,7 @@ cargo build --release
 # The binary will be located in the target/release directory
 ```
 
-The run the server:
+Then run the server:
 
 ```sh
 ./simple-file-store
