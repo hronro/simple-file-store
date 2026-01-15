@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use the official `sailfish` crate instead of the forked version, since the official `sailfish` crate now supports removing newlines in the rendered HTML files.
 - Upgrade Rust to v1.92.
 - Upgrade to dependencies to their latest versions.
+- Change the crypto backend to `aws_lc_rs`.
 
 ## [0.3.0]
 
