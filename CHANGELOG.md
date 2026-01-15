@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Use the official `sailfish` crate instead of the forked version, since the official `sailfish` crate now supports removing newlines in the rendered HTML files.
+- Upgrade Rust to v1.92.
+
 
 ## [0.3.0]
 
