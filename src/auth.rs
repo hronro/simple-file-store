@@ -61,19 +61,19 @@ where
             return Ok(token_data.claims);
         }
 
-        if let Ok(TypedHeader(cookie)) = parts.extract::<TypedHeader<Cookie>>().await {
-            if let Some(token) = cookie.get("access_token") {
-                let token_data = decode::<Claims>(token, &KEYS.decoding, &Validation::default())
-                    .map_err(|_| ServerError::InvalidToken {
-                        current_uri: parts
-                            .uri
-                            .path_and_query()
-                            .map(|p_and_q| encode_uri(p_and_q.as_str().as_bytes()).collect())
-                            .unwrap_or("/".to_string()),
-                    })?;
+        if let Ok(TypedHeader(cookie)) = parts.extract::<TypedHeader<Cookie>>().await
+            && let Some(token) = cookie.get("access_token")
+        {
+            let token_data = decode::<Claims>(token, &KEYS.decoding, &Validation::default())
+                .map_err(|_| ServerError::InvalidToken {
+                    current_uri: parts
+                        .uri
+                        .path_and_query()
+                        .map(|p_and_q| encode_uri(p_and_q.as_str().as_bytes()).collect())
+                        .unwrap_or("/".to_string()),
+                })?;
 
-                return Ok(token_data.claims);
-            }
+            return Ok(token_data.claims);
         }
 
         Err(ServerError::MissingCredentials {
