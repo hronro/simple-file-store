@@ -72,7 +72,7 @@ fn main() {
                     }),
                     ..Default::default()
                 })
-                .build(&allocator, &mut parse_return.program);
+                .minify(&allocator, &mut parse_return.program);
                 let minified_content = OxcCodegen::new()
                     .with_options(OxcCodegenOptions::minify())
                     .with_scoping(minify_return.scoping)
