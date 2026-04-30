@@ -3,17 +3,20 @@ use std::fs::{File as StdFile, OpenOptions as StdOpenOptions};
 use std::io::BufReader;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::{Arc, LazyLock, Mutex};
 
-use axum::body::Bytes;
+use axum::body::Body;
 use axum::extract::Path;
 use axum::http::{StatusCode, header::HeaderMap};
 use axum::response::{IntoResponse, Json};
+use futures::StreamExt;
 use rustix::fd::AsFd;
 use rustix::fs::{FallocateFlags, FlockOperation, fallocate, flock};
 use rustix::io::pwrite;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use tokio::fs;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task::spawn_blocking;
 
 use crate::auth::Claims;
@@ -21,6 +24,17 @@ use crate::config::CONFIG;
 use crate::errors::ServerError;
 
 pub const ROUTE_PATH: &str = "/upload/{*file_path}";
+const UPLOAD_BYTE_BUDGET_UNIT: usize = 1024 * 1024;
+
+static ACTIVE_UPLOAD_CHUNKS: LazyLock<Arc<Semaphore>> =
+    LazyLock::new(|| Arc::new(Semaphore::new(CONFIG.max_active_upload_chunks)));
+static ACTIVE_UPLOAD_BYTES: LazyLock<Arc<Semaphore>> = LazyLock::new(|| {
+    Arc::new(Semaphore::new(
+        byte_budget_permits(CONFIG.max_active_upload_bytes) as usize,
+    ))
+});
+static ACTIVE_CHUNKS_BY_UPLOAD: LazyLock<Mutex<HashMap<PathBuf, Arc<Semaphore>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
@@ -220,7 +234,7 @@ pub async fn put(
     _: Claims,
     Path(path): Path<String>,
     headers: HeaderMap,
-    body: Bytes,
+    body: Body,
 ) -> Result<impl IntoResponse, ServerError> {
     let file_path = CONFIG.store_path.join(&path);
 
@@ -271,6 +285,8 @@ pub async fn put(
         return Err(ServerError::ChunkIsCompleted);
     }
 
+    let _upload_permits = UploadPermits::acquire(&file_path, content_length)?;
+
     ResumableUploadedFileMeta::update_meta_file(&file_path, move |meta| {
         meta.chunks.insert(chunk_index, ChunkStatus::Ongoing);
     })
@@ -283,12 +299,15 @@ pub async fn put(
         .into_std()
         .await;
 
-    let write_result = spawn_blocking(move || {
-        file_seek_write_all(&upload_file, (chunk_index * meta.chunk_size) as u64, &body)
-    })
+    let write_result = stream_body_to_file(
+        Arc::new(upload_file),
+        (chunk_index * meta.chunk_size) as u64,
+        content_length,
+        body,
+    )
     .await;
 
-    if !matches!(write_result, Ok(Ok(_))) {
+    if write_result.is_err() {
         ResumableUploadedFileMeta::update_meta_file(&file_path, move |meta| {
             meta.chunks.insert(chunk_index, ChunkStatus::NotStarted);
         })
@@ -313,6 +332,102 @@ pub async fn put(
     } else {
         Ok(Json(ResumableUploadFileResponse::new(true, false)))
     }
+}
+
+struct UploadPermits {
+    global_permit: Option<OwnedSemaphorePermit>,
+    upload_permit: Option<OwnedSemaphorePermit>,
+    byte_budget_permit: Option<OwnedSemaphorePermit>,
+    upload_path: PathBuf,
+    upload_semaphore: Arc<Semaphore>,
+}
+
+impl UploadPermits {
+    fn acquire(upload_path: &std::path::Path, content_length: usize) -> Result<Self, ServerError> {
+        let global_permit = ACTIVE_UPLOAD_CHUNKS
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ServerError::TooManyUploadRequests)?;
+        let byte_budget_permit = ACTIVE_UPLOAD_BYTES
+            .clone()
+            .try_acquire_many_owned(byte_budget_permits(content_length))
+            .map_err(|_| ServerError::TooManyUploadRequests)?;
+
+        let upload_semaphore = {
+            let mut active_chunks_by_upload = ACTIVE_CHUNKS_BY_UPLOAD.lock().unwrap();
+            active_chunks_by_upload
+                .entry(upload_path.to_path_buf())
+                .or_insert_with(|| Arc::new(Semaphore::new(CONFIG.max_active_chunks_per_upload)))
+                .clone()
+        };
+        let upload_permit = upload_semaphore
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ServerError::TooManyUploadRequests)?;
+
+        Ok(Self {
+            global_permit: Some(global_permit),
+            upload_permit: Some(upload_permit),
+            byte_budget_permit: Some(byte_budget_permit),
+            upload_path: upload_path.to_path_buf(),
+            upload_semaphore,
+        })
+    }
+}
+
+impl Drop for UploadPermits {
+    fn drop(&mut self) {
+        self.global_permit.take();
+        self.upload_permit.take();
+        self.byte_budget_permit.take();
+
+        if self.upload_semaphore.available_permits() == CONFIG.max_active_chunks_per_upload {
+            let mut active_chunks_by_upload = ACTIVE_CHUNKS_BY_UPLOAD.lock().unwrap();
+            if Arc::strong_count(&self.upload_semaphore) == 2 {
+                active_chunks_by_upload.remove(&self.upload_path);
+            }
+        }
+    }
+}
+
+fn byte_budget_permits(byte_count: usize) -> u32 {
+    byte_count
+        .div_ceil(UPLOAD_BYTE_BUDGET_UNIT)
+        .max(1)
+        .min(u32::MAX as usize) as u32
+}
+
+async fn stream_body_to_file(
+    file: Arc<StdFile>,
+    offset: u64,
+    content_length: usize,
+    body: Body,
+) -> Result<(), ServerError> {
+    let mut body = body.into_data_stream();
+    let mut total_written = 0usize;
+
+    while let Some(chunk) = body.next().await {
+        let chunk = chunk.map_err(|err| ServerError::Custom {
+            status: StatusCode::BAD_REQUEST,
+            message: err.to_string(),
+        })?;
+
+        let chunk_len = chunk.len();
+        if total_written + chunk_len > content_length {
+            return Err(ServerError::InvalidContentLength);
+        }
+
+        let file = file.clone();
+        let chunk_offset = offset + total_written as u64;
+        spawn_blocking(move || file_seek_write_all(&file, chunk_offset, &chunk)).await??;
+        total_written += chunk_len;
+    }
+
+    if total_written != content_length {
+        return Err(ServerError::InvalidContentLength);
+    }
+
+    Ok(())
 }
 
 #[cfg(not(windows))]

@@ -57,6 +57,9 @@ Configure Simple File Store using environment variables or command-line argument
 | `SFS_LISTEN`        | `--listen`, `-l`  | Listen address | `[::]:8080` |
 | `SFS_STORE_PATH`    | `--store-path`, `-p` | Path to store files | Current directory |
 | `SFS_CHUNK_SIZE`    | `--chunk-size`, `-s` | Chunk size in bytes | 8MB |
+| `SFS_MAX_ACTIVE_UPLOAD_CHUNKS` | `--max-active-upload-chunks` | Maximum active resumable upload chunks across the server | `32` |
+| `SFS_MAX_ACTIVE_CHUNKS_PER_UPLOAD` | `--max-active-chunks-per-upload` | Maximum active resumable upload chunks per file | `6` |
+| `SFS_MAX_ACTIVE_UPLOAD_BYTES` | `--max-active-upload-bytes` | Active resumable upload byte budget | 512MB |
 | `SFS_USERNAME`      | `--username`, `-u` | Username for authentication | `admin` |
 | `SFS_PASSWORD`      | `--password`, `-w` | Password for authentication | `password` |
 | `SFS_SECRET`        | `--secret`, `-x` | Secret for JWT | Random 16 characters |
@@ -83,6 +86,10 @@ Simple File Store is designed for self hosting, with a focus on speed and effici
 - Works in any browser without JavaScript requirements
 - When JavaScript is enabled, offers enhanced user experience with progress indicators and resumable uploads
 - Compatible with older browsers, text-based browsers, and low-powered devices
+
+### Upload Concurrency
+
+The built-in web client uploads up to 6 resumable chunks concurrently. Native and third-party clients may use higher concurrency, but should respect server-side `429 Too Many Requests` responses and `Retry-After` headers. See [Client Upload Concurrency](docs/client-concurrency.md) for details.
 
 ### Security
 - JWT-based authentication

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Server-side concurrency limits for resumable uploads, configurable with `SFS_MAX_ACTIVE_UPLOAD_CHUNKS`, `SFS_MAX_ACTIVE_CHUNKS_PER_UPLOAD`, and `SFS_MAX_ACTIVE_UPLOAD_BYTES`.
+
+### Changed
+
+- Stream resumable upload chunks directly to disk instead of buffering the full chunk in memory, reducing memory pressure during concurrent uploads.
+- Return `429 Too Many Requests` with `Retry-After` when upload concurrency limits are reached, and make the web client retry affected chunks instead of failing the upload immediately.
+
 ## [0.3.1]
 
 ### Changed

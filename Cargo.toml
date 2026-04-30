@@ -28,7 +28,7 @@ serde_json = "1"
 serde_repr = "0.1"
 size = "0.5"
 time = { version = "0.3", features = ["macros", "formatting"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "sync"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tower-service = "0.3"

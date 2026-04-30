@@ -34,6 +34,9 @@ pub struct Config {
     pub listen: SocketAddr,
     pub store_path: PathBuf,
     pub chunk_size: usize,
+    pub max_active_upload_chunks: usize,
+    pub max_active_chunks_per_upload: usize,
+    pub max_active_upload_bytes: usize,
     pub username: String,
     pub password: String,
     pub secret: String,
@@ -46,6 +49,9 @@ impl Default for Config {
             listen: SocketAddr::V6("[::]:8080".parse().unwrap()),
             store_path: current_dir().unwrap(),
             chunk_size: 1024 * 1024 * 8, // 8MB
+            max_active_upload_chunks: 32,
+            max_active_chunks_per_upload: 6,
+            max_active_upload_bytes: 1024 * 1024 * 512, // 512MB
             username: "admin".to_string(),
             password: "password".to_string(),
             secret: Alphanumeric.sample_string(&mut rng(), 16),
@@ -79,6 +85,43 @@ impl Config {
         if let Some(chunk_size_string) = user_config.chunk_size {
             let chunk_size = chunk_size_string.parse().context("Invalid chunk size")?;
             config.chunk_size = chunk_size;
+        }
+        if config.chunk_size == 0 {
+            bail!("Chunk size must be greater than 0");
+        }
+
+        if let Some(max_active_upload_chunks_string) = user_config.max_active_upload_chunks {
+            let max_active_upload_chunks = max_active_upload_chunks_string
+                .parse()
+                .context("Invalid max active upload chunks")?;
+            config.max_active_upload_chunks = max_active_upload_chunks;
+        }
+        if config.max_active_upload_chunks == 0 {
+            bail!("Max active upload chunks must be greater than 0");
+        }
+
+        if let Some(max_active_chunks_per_upload_string) = user_config.max_active_chunks_per_upload
+        {
+            let max_active_chunks_per_upload = max_active_chunks_per_upload_string
+                .parse()
+                .context("Invalid max active chunks per upload")?;
+            config.max_active_chunks_per_upload = max_active_chunks_per_upload;
+        }
+        if config.max_active_chunks_per_upload == 0 {
+            bail!("Max active chunks per upload must be greater than 0");
+        }
+
+        if let Some(max_active_upload_bytes_string) = user_config.max_active_upload_bytes {
+            let max_active_upload_bytes = max_active_upload_bytes_string
+                .parse()
+                .context("Invalid max active upload bytes")?;
+            config.max_active_upload_bytes = max_active_upload_bytes;
+        }
+        if config.max_active_upload_bytes == 0 {
+            bail!("Max active upload bytes must be greater than 0");
+        }
+        if config.max_active_upload_bytes < config.chunk_size {
+            bail!("Max active upload bytes must be greater than or equal to chunk size");
         }
 
         if let Some(username) = user_config.username {
@@ -138,6 +181,9 @@ pub struct UserConfig {
     listen: Option<String>,
     store_path: Option<String>,
     chunk_size: Option<String>,
+    max_active_upload_chunks: Option<String>,
+    max_active_chunks_per_upload: Option<String>,
+    max_active_upload_bytes: Option<String>,
     username: Option<String>,
     password: Option<String>,
     secret: Option<String>,
@@ -160,6 +206,19 @@ impl UserConfig {
 
         if let Ok(chunk_size) = std::env::var("SFS_CHUNK_SIZE") {
             config.chunk_size = Some(chunk_size);
+        }
+
+        if let Ok(max_active_upload_chunks) = std::env::var("SFS_MAX_ACTIVE_UPLOAD_CHUNKS") {
+            config.max_active_upload_chunks = Some(max_active_upload_chunks);
+        }
+
+        if let Ok(max_active_chunks_per_upload) = std::env::var("SFS_MAX_ACTIVE_CHUNKS_PER_UPLOAD")
+        {
+            config.max_active_chunks_per_upload = Some(max_active_chunks_per_upload);
+        }
+
+        if let Ok(max_active_upload_bytes) = std::env::var("SFS_MAX_ACTIVE_UPLOAD_BYTES") {
+            config.max_active_upload_bytes = Some(max_active_upload_bytes);
         }
 
         if let Ok(username) = std::env::var("SFS_USERNAME") {
@@ -205,6 +264,9 @@ impl UserConfig {
                         --listen, -l <ADDR>\t\tListen address (default: [::]:8080)\n\
                         --store-path, -p <PATH>\t\tPath to store files (default: current directory)\n\
                         --chunk-size, -s <SIZE>\t\tChunk size in bytes (default: 8MB)\n\
+                        --max-active-upload-chunks <COUNT>\tMaximum active resumable upload chunks across the server (default: 32)\n\
+                        --max-active-chunks-per-upload <COUNT>\tMaximum active resumable upload chunks per file (default: 6)\n\
+                        --max-active-upload-bytes <BYTES>\tActive resumable upload byte budget (default: 512MB)\n\
                         --username, -u <USERNAME>\tUsername for authentication (default: admin)\n\
                         --password, -w <PASSWORD>\tPassword for authentication (default: password)\n\
                         --secret, -x <SECRET>\t\tSecret for JWT (default: random 16 characters)\n\
@@ -217,6 +279,9 @@ impl UserConfig {
                         SFS_LISTEN\t\tListen address\n\
                         SFS_STORE_PATH\t\tPath to store files\n\
                         SFS_CHUNK_SIZE\t\tChunk size in bytes\n\
+                        SFS_MAX_ACTIVE_UPLOAD_CHUNKS\tMaximum active resumable upload chunks across the server\n\
+                        SFS_MAX_ACTIVE_CHUNKS_PER_UPLOAD\tMaximum active resumable upload chunks per file\n\
+                        SFS_MAX_ACTIVE_UPLOAD_BYTES\tActive resumable upload byte budget\n\
                         SFS_USERNAME\t\tUsername for authentication\n\
                         SFS_PASSWORD\t\tPassword for authentication\n\
                         SFS_SECRET\t\tSecret for JWT\n\
@@ -252,6 +317,27 @@ impl UserConfig {
                         .next()
                         .context("--chunk-size/-s requires an argument")?;
                     config.chunk_size = Some(chunk_size);
+                }
+
+                "--max-active-upload-chunks" => {
+                    let max_active_upload_chunks = args
+                        .next()
+                        .context("--max-active-upload-chunks requires an argument")?;
+                    config.max_active_upload_chunks = Some(max_active_upload_chunks);
+                }
+
+                "--max-active-chunks-per-upload" => {
+                    let max_active_chunks_per_upload = args
+                        .next()
+                        .context("--max-active-chunks-per-upload requires an argument")?;
+                    config.max_active_chunks_per_upload = Some(max_active_chunks_per_upload);
+                }
+
+                "--max-active-upload-bytes" => {
+                    let max_active_upload_bytes = args
+                        .next()
+                        .context("--max-active-upload-bytes requires an argument")?;
+                    config.max_active_upload_bytes = Some(max_active_upload_bytes);
                 }
 
                 "--username" | "-u" => {
@@ -307,6 +393,18 @@ impl UserConfig {
 
         if let Some(chunk_size) = cli_config.chunk_size {
             config.chunk_size = Some(chunk_size);
+        }
+
+        if let Some(max_active_upload_chunks) = cli_config.max_active_upload_chunks {
+            config.max_active_upload_chunks = Some(max_active_upload_chunks);
+        }
+
+        if let Some(max_active_chunks_per_upload) = cli_config.max_active_chunks_per_upload {
+            config.max_active_chunks_per_upload = Some(max_active_chunks_per_upload);
+        }
+
+        if let Some(max_active_upload_bytes) = cli_config.max_active_upload_bytes {
+            config.max_active_upload_bytes = Some(max_active_upload_bytes);
         }
 
         if let Some(username) = cli_config.username {

@@ -189,19 +189,26 @@ async function resumableUpload() {
 			let retryTimes = 3
 
 			while (retryTimes > 0) {
-				--retryTimes
-
 				/** @type { success: boolaen; allChunksCompleted: boolean } */
 				let uploadResult
 				try {
-					uploadResult = await (await fetch(`${uriPrefix}${file.name}`, {
+					const response = await fetch(`${uriPrefix}${file.name}`, {
 						method: 'PUT',
 						headers: {
 							'Resumable-Upload-Chunk-Index': chunkIndex,
 						},
 						body: data,
-					})).json()
+					})
+
+					if (response.status === 429) {
+						await sleep(getRetryAfterMs(response))
+						continue
+					}
+
+					--retryTimes
+					uploadResult = await response.json()
 				} catch (_) {
+					--retryTimes
 					continue
 				}
 
@@ -230,6 +237,24 @@ async function resumableUpload() {
 			}
 		})()
 	})
+}
+
+function getRetryAfterMs(response) {
+	const retryAfter = response.headers.get('Retry-After')
+	if (retryAfter == null) {
+		return 1000
+	}
+
+	const retryAfterSeconds = Number.parseInt(retryAfter, 10)
+	if (Number.isFinite(retryAfterSeconds)) {
+		return retryAfterSeconds * 1000
+	}
+
+	return 1000
+}
+
+function sleep(ms) {
+	return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 function showUploadProgress() {

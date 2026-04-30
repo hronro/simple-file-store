@@ -27,6 +27,7 @@ pub enum ServerError {
     InvalidChunkIndex,
     ChunkIsOngoing,
     ChunkIsCompleted,
+    TooManyUploadRequests,
     UploadChunkFailed,
     Custom { status: StatusCode, message: String },
 }
@@ -177,6 +178,13 @@ impl IntoResponse for ServerError {
             Self::ChunkIsCompleted => (
                 StatusCode::BAD_REQUEST,
                 Json(json!({"error": "The chunk is completed."})),
+            )
+                .into_response(),
+
+            Self::TooManyUploadRequests => (
+                StatusCode::TOO_MANY_REQUESTS,
+                [("retry-after", "1")],
+                Json(json!({"error": "Too many upload chunks are active. Please retry later."})),
             )
                 .into_response(),
 
