@@ -96,6 +96,13 @@ The built-in web client uploads up to 6 resumable chunks concurrently. Native an
 - Configurable token expiration
 - Custom secret key support
 
+> [!WARNING]
+> **Change the default credentials before exposing the server to any network.** The built-in defaults `admin` / `password` are intended for local testing only. Additional notes:
+>
+> - Passwords are read from `SFS_USERNAME` / `SFS_PASSWORD` (or `--username` / `--password`) and held in memory in plaintext — there is no on-disk user store, so they are not hashed. Prefer environment variables over CLI flags so credentials don't leak into shell history or `ps` output.
+> - The password equality check is not constant-time. With a long, randomly generated password this is not practically exploitable, but on any untrusted network you should also enable TLS (`--tls-cert` / `--tls-key`) so the password isn't sent in cleartext.
+> - If `SFS_SECRET` is not set, a random 16-character secret is generated on every startup, which invalidates all previously issued JWTs on restart. Set `SFS_SECRET` to a stable, high-entropy value (e.g. `openssl rand -hex 32`) if you need tokens to survive restarts.
+
 ## License
 
 [AGPL-3.0 License](LICENSE)
