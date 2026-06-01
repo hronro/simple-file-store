@@ -58,6 +58,10 @@ async fn main() -> Result<()> {
             )
         });
 
+    // Recover any chunks left in `Ongoing` from a hard-killed previous run.
+    // Runs before the listener is bound so concurrent uploads cannot race the cleanup.
+    upload::reset_stale_ongoing_chunks(&config::CONFIG.store_path).await;
+
     let listener = tokio::net::TcpListener::bind(config::CONFIG.listen).await?;
 
     if let Some(ref tls) = config::CONFIG.tls {

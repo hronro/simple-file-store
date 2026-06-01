@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fs::{File as StdFile, OpenOptions as StdOpenOptions};
 use std::io::BufReader;
-use std::io::Write;
-use std::path::PathBuf;
+use std::io::{Seek, SeekFrom, Write};
+use std::path::{Path as StdPath, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use axum::body::Body;
@@ -37,7 +37,7 @@ static ACTIVE_UPLOAD_BYTES: LazyLock<Arc<Semaphore>> = LazyLock::new(|| {
 static ACTIVE_CHUNKS_BY_UPLOAD: LazyLock<Mutex<HashMap<PathBuf, Arc<Semaphore>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-#[derive(Serialize_repr, Deserialize_repr)]
+#[derive(Serialize_repr, Deserialize_repr, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ChunkStatus {
     NotStarted = 0,
@@ -122,19 +122,26 @@ impl ResumableUploadedFileMeta {
         Ok::<_, ServerError>(meta)
     }
 
-    /// Update the `.resumable-meta` file for the given file path.
-    /// During the update process, the file locked so no other process can read or write to it.
+    /// Atomically read, mutate, and write the `.resumable-meta` file under an
+    /// exclusive file lock. The updater may veto the write by returning an
+    /// error; in that case the meta file is left untouched and the error is
+    /// propagated to the caller. This is the only safe place to do
+    /// check-and-set on chunk status.
+    ///
+    /// If the updater leaves the meta byte-identical to what was on disk, no
+    /// write is performed — `set_len(0)` is only called when we actually have
+    /// new bytes to write, so the no-op path is free and safe.
     pub async fn update_meta_file<F, U>(file_path: F, updater: U) -> Result<(), ServerError>
     where
         F: AsRef<std::path::Path>,
-        U: FnOnce(&mut Self) + Send + 'static,
+        U: FnOnce(&mut Self) -> Result<(), ServerError> + Send + 'static,
     {
         let meta_file_path = Self::path(file_path.as_ref());
 
         spawn_blocking(move || {
             let mut meta_file = StdOpenOptions::new()
+                .read(true)
                 .write(true)
-                .append(false)
                 .open(&meta_file_path)
                 .map_err(|err| ServerError::Custom {
                     status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -143,17 +150,149 @@ impl ResumableUploadedFileMeta {
 
             flock(meta_file.as_fd(), FlockOperation::LockExclusive)?;
 
-            let meta_file_for_read = StdFile::open(&meta_file_path)?;
-            let mut meta = Self::read_from_file_sync(&meta_file_for_read)?;
-            updater(&mut meta);
-            let new_meta_file_content = serde_json::to_vec(&meta).unwrap();
-            meta_file.write_all(&new_meta_file_content)?;
+            let mut meta = Self::read_from_file_sync(&meta_file)?;
+            let before = serde_json::to_vec(&meta).unwrap();
+            updater(&mut meta)?;
+            let after = serde_json::to_vec(&meta).unwrap();
+
+            if before != after {
+                meta_file.set_len(0)?;
+                meta_file.seek(SeekFrom::Start(0))?;
+                meta_file.write_all(&after)?;
+            }
 
             flock(meta_file.as_fd(), FlockOperation::Unlock)?;
 
             Ok(())
         })
         .await?
+    }
+}
+
+/// Reset a chunk back to `NotStarted`, but **only** if it is still `Ongoing`.
+/// The defensive check guards against the race where a retry has already
+/// arrived and re-completed the chunk before this cleanup runs.
+async fn reset_ongoing_chunk_to_not_started(file_path: PathBuf, chunk_index: usize) {
+    let _ = ResumableUploadedFileMeta::update_meta_file(file_path, move |meta| {
+        if let Some(status) = meta.chunks.get(&chunk_index)
+            && status.is_ongoing() {
+                meta.chunks.insert(chunk_index, ChunkStatus::NotStarted);
+            }
+        Ok(())
+    })
+    .await;
+}
+
+/// RAII safety net for the `Ongoing` chunk state. Created right after the
+/// atomic transition to `Ongoing`; commit before returning from the happy or
+/// explicit-error path. If the request future is dropped (cancellation,
+/// panic-unwind in dev) before `commit` is called, `Drop` fires a tokio task
+/// that resets the chunk to `NotStarted`.
+///
+/// Note: in release builds `panic = "abort"` skips `Drop` entirely, and
+/// SIGKILL / power loss bypass it too — those cases are covered by
+/// `reset_stale_ongoing_chunks` at startup.
+struct OngoingChunkGuard {
+    file_path: PathBuf,
+    chunk_index: usize,
+    runtime: tokio::runtime::Handle,
+    committed: bool,
+}
+
+impl OngoingChunkGuard {
+    fn new(file_path: PathBuf, chunk_index: usize) -> Self {
+        Self {
+            file_path,
+            chunk_index,
+            runtime: tokio::runtime::Handle::current(),
+            committed: false,
+        }
+    }
+
+    fn commit(mut self) {
+        self.committed = true;
+    }
+}
+
+impl Drop for OngoingChunkGuard {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        let file_path = std::mem::take(&mut self.file_path);
+        let chunk_index = self.chunk_index;
+        self.runtime
+            .spawn(reset_ongoing_chunk_to_not_started(file_path, chunk_index));
+    }
+}
+
+/// Recursively walk `root`, resetting every `Ongoing` chunk in every
+/// `.resumable-meta` file back to `NotStarted`. Run at process startup,
+/// **before** the listener accepts traffic, so concurrent uploads cannot race
+/// the cleanup. Tolerates a missing root (fresh install) and per-file errors
+/// (corrupt meta, permission denied) — they are logged and skipped.
+pub async fn reset_stale_ongoing_chunks(root: &StdPath) {
+    let root = root.to_path_buf();
+    let meta_paths = match spawn_blocking(move || find_meta_files(&root)).await {
+        Ok(paths) => paths,
+        Err(err) => {
+            eprintln!("startup scan: failed to walk store path: {err}");
+            return;
+        }
+    };
+
+    for meta_path in meta_paths {
+        let Some(file_name) = meta_path.file_stem() else {
+            continue;
+        };
+        let original_path = meta_path.with_file_name(file_name);
+        if let Err(err) = ResumableUploadedFileMeta::update_meta_file(&original_path, |meta| {
+            for status in meta.chunks.values_mut() {
+                if status.is_ongoing() {
+                    *status = ChunkStatus::NotStarted;
+                }
+            }
+            Ok(())
+        })
+        .await
+        {
+            eprintln!(
+                "startup scan: skipping {}: {}",
+                meta_path.display(),
+                describe_server_error(&err),
+            );
+        }
+    }
+}
+
+fn find_meta_files(root: &StdPath) -> Vec<PathBuf> {
+    let mut metas = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            let path = entry.path();
+            if file_type.is_dir() {
+                stack.push(path);
+            } else if path.extension().and_then(|s| s.to_str()) == Some("resumable-meta") {
+                metas.push(path);
+            }
+        }
+    }
+    metas
+}
+
+fn describe_server_error(err: &ServerError) -> &'static str {
+    match err {
+        ServerError::IoError(_) => "io error",
+        ServerError::UploadMetaIsBroken => "meta file is corrupt",
+        ServerError::Custom { .. } => "internal error",
+        _ => "error",
     }
 }
 
@@ -265,33 +404,38 @@ pub async fn put(
         .await?
         .ok_or(ServerError::FileIsNotCreated)?;
 
-    if content_length != meta.chunk_size {
-        // Only the last chunk can be smaller than the chunk size.
-        if !(chunk_index == meta.chunks.len() - 1 && content_length < meta.chunk_size) {
-            return Err(ServerError::InvalidContentLength);
-        }
+    // `chunk_size` and `chunks.len()` are fixed at meta creation, so validating
+    // them outside the lock is safe. The chunk *status* check has to happen
+    // atomically with the transition to `Ongoing`, so it lives in the closure
+    // passed to `update_meta_file`.
+    if content_length != meta.chunk_size
+        && !(chunk_index == meta.chunks.len() - 1 && content_length < meta.chunk_size)
+    {
+        return Err(ServerError::InvalidContentLength);
     }
-
-    let chunk_status = meta.chunks.get(&chunk_index);
-    if chunk_status.is_none() {
+    if !meta.chunks.contains_key(&chunk_index) {
         return Err(ServerError::InvalidChunkIndex);
-    }
-    let chunk_status = chunk_status.unwrap();
-
-    if chunk_status.is_ongoing() {
-        return Err(ServerError::ChunkIsOngoing);
-    }
-
-    if chunk_status.is_completed() {
-        return Err(ServerError::ChunkIsCompleted);
     }
 
     let _upload_permits = UploadPermits::acquire(&file_path, content_length)?;
 
     ResumableUploadedFileMeta::update_meta_file(&file_path, move |meta| {
+        match meta.chunks.get(&chunk_index) {
+            None => return Err(ServerError::InvalidChunkIndex),
+            Some(s) if s.is_ongoing() => return Err(ServerError::ChunkIsOngoing),
+            Some(s) if s.is_completed() => return Err(ServerError::ChunkIsCompleted),
+            Some(_) => {}
+        }
         meta.chunks.insert(chunk_index, ChunkStatus::Ongoing);
+        Ok(())
     })
     .await?;
+
+    // Safety net: if this future is cancelled (panic-unwind in dev, runtime
+    // shutdown), Drop spawns a task to reset the chunk back to NotStarted.
+    // MUST be constructed synchronously here — no `.await` between the
+    // transition to Ongoing and this line, or there's a cancellation window.
+    let guard = OngoingChunkGuard::new(file_path.clone(), chunk_index);
 
     let upload_file = fs::OpenOptions::new()
         .write(true)
@@ -311,15 +455,19 @@ pub async fn put(
     if write_result.is_err() {
         ResumableUploadedFileMeta::update_meta_file(&file_path, move |meta| {
             meta.chunks.insert(chunk_index, ChunkStatus::NotStarted);
+            Ok(())
         })
         .await?;
+        guard.commit();
         return Err(ServerError::UploadChunkFailed);
     }
 
     ResumableUploadedFileMeta::update_meta_file(&file_path, move |meta| {
         meta.chunks.insert(chunk_index, ChunkStatus::Completed);
+        Ok(())
     })
     .await?;
+    guard.commit();
 
     // Check if all chunks are completed
     let meta = ResumableUploadedFileMeta::read_from_file(&file_path)
@@ -459,4 +607,461 @@ fn file_seek_write_all(file: &StdFile, offset: u64, data: &[u8]) -> Result<(), S
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+    use tempfile::TempDir;
+
+    // ----- helpers -----
+
+    fn write_meta_raw(file_path: &StdPath, meta: &ResumableUploadedFileMeta) {
+        let meta_path = ResumableUploadedFileMeta::path(file_path);
+        let bytes = serde_json::to_vec(meta).unwrap();
+        std::fs::write(meta_path, bytes).unwrap();
+    }
+
+    fn read_meta_raw(file_path: &StdPath) -> ResumableUploadedFileMeta {
+        let meta_path = ResumableUploadedFileMeta::path(file_path);
+        let file = StdFile::open(meta_path).unwrap();
+        serde_json::from_reader(BufReader::new(file)).unwrap()
+    }
+
+    fn fixture(chunks: &[ChunkStatus]) -> ResumableUploadedFileMeta {
+        let chunk_size = 8;
+        let file_size = (chunks.len() * chunk_size) as u64;
+        let mut meta = ResumableUploadedFileMeta::new(chunk_size, file_size);
+        for (i, status) in chunks.iter().enumerate() {
+            meta.chunks.insert(i, *status);
+        }
+        meta
+    }
+
+    async fn await_predicate<F: FnMut() -> bool>(mut predicate: F) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !predicate() {
+            if Instant::now() > deadline {
+                panic!("predicate did not become true within 2s");
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }
+
+    // ----- ResumableUploadedFileMeta::new chunk-count math -----
+
+    #[test]
+    fn new_zero_size_yields_zero_chunks() {
+        let meta = ResumableUploadedFileMeta::new(8 * 1024 * 1024, 0);
+        assert_eq!(meta.chunks.len(), 0);
+        assert_eq!(meta.file_size, 0);
+    }
+
+    #[test]
+    fn new_single_byte_yields_one_chunk() {
+        let meta = ResumableUploadedFileMeta::new(8 * 1024 * 1024, 1);
+        assert_eq!(meta.chunks.len(), 1);
+        assert_eq!(meta.chunks[&0], ChunkStatus::NotStarted);
+    }
+
+    #[test]
+    fn new_exact_chunk_size_yields_one_chunk() {
+        let meta = ResumableUploadedFileMeta::new(8 * 1024 * 1024, 8 * 1024 * 1024);
+        assert_eq!(meta.chunks.len(), 1);
+    }
+
+    #[test]
+    fn new_chunk_size_plus_one_yields_two_chunks() {
+        let meta = ResumableUploadedFileMeta::new(8 * 1024 * 1024, 8 * 1024 * 1024 + 1);
+        assert_eq!(meta.chunks.len(), 2);
+    }
+
+    #[test]
+    fn new_exact_two_chunks() {
+        let meta = ResumableUploadedFileMeta::new(8 * 1024 * 1024, 16 * 1024 * 1024);
+        assert_eq!(meta.chunks.len(), 2);
+    }
+
+    #[test]
+    fn new_two_chunks_plus_one_yields_three() {
+        let meta = ResumableUploadedFileMeta::new(8 * 1024 * 1024, 16 * 1024 * 1024 + 1);
+        assert_eq!(meta.chunks.len(), 3);
+    }
+
+    // ----- path round-trip via file_stem -----
+
+    #[test]
+    fn meta_path_round_trip_with_extension() {
+        let original = StdPath::new("/store/foo.txt");
+        let meta = ResumableUploadedFileMeta::path(original);
+        assert_eq!(meta, StdPath::new("/store/foo.txt.resumable-meta"));
+        let derived = meta.with_file_name(meta.file_stem().unwrap());
+        assert_eq!(derived, original);
+    }
+
+    #[test]
+    fn meta_path_round_trip_no_extension() {
+        let original = StdPath::new("/store/foo");
+        let meta = ResumableUploadedFileMeta::path(original);
+        assert_eq!(meta, StdPath::new("/store/foo.resumable-meta"));
+        let derived = meta.with_file_name(meta.file_stem().unwrap());
+        assert_eq!(derived, original);
+    }
+
+    #[test]
+    fn meta_path_round_trip_multi_dot() {
+        let original = StdPath::new("/store/foo.tar.gz");
+        let meta = ResumableUploadedFileMeta::path(original);
+        assert_eq!(meta, StdPath::new("/store/foo.tar.gz.resumable-meta"));
+        let derived = meta.with_file_name(meta.file_stem().unwrap());
+        assert_eq!(derived, original);
+    }
+
+    // ----- update_meta_file -----
+
+    #[tokio::test]
+    async fn update_meta_file_applies_change() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("a.bin");
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::NotStarted]));
+
+        ResumableUploadedFileMeta::update_meta_file(file_path.clone(), |meta| {
+            meta.chunks.insert(0, ChunkStatus::Completed);
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(read_meta_raw(&file_path).chunks[&0], ChunkStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn update_meta_file_does_not_write_when_updater_errs() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("a.bin");
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::NotStarted]));
+        let meta_path = ResumableUploadedFileMeta::path(&file_path);
+        let before = std::fs::read(&meta_path).unwrap();
+
+        let result = ResumableUploadedFileMeta::update_meta_file(file_path.clone(), |meta| {
+            meta.chunks.insert(0, ChunkStatus::Ongoing);
+            Err(ServerError::ChunkIsOngoing)
+        })
+        .await;
+
+        assert!(matches!(result, Err(ServerError::ChunkIsOngoing)));
+        let after = std::fs::read(&meta_path).unwrap();
+        assert_eq!(before, after, "meta file must be byte-identical after err");
+    }
+
+    #[tokio::test]
+    async fn update_meta_file_skips_write_on_noop() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("a.bin");
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::Completed]));
+        let meta_path = ResumableUploadedFileMeta::path(&file_path);
+        let before = std::fs::read(&meta_path).unwrap();
+        let before_mtime = std::fs::metadata(&meta_path).unwrap().modified().unwrap();
+
+        // Sleep so any spurious write would produce a measurably different mtime.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+
+        ResumableUploadedFileMeta::update_meta_file(file_path.clone(), |_meta| Ok(()))
+            .await
+            .unwrap();
+
+        let after = std::fs::read(&meta_path).unwrap();
+        let after_mtime = std::fs::metadata(&meta_path).unwrap().modified().unwrap();
+        assert_eq!(before, after);
+        assert_eq!(before_mtime, after_mtime, "no-op must not touch the file");
+    }
+
+    #[tokio::test]
+    async fn update_meta_file_truncates_when_shrinking() {
+        // Pad the on-disk file with trailing whitespace (which serde_json
+        // tolerates) so a subsequent write that doesn't truncate would leave
+        // those trailing bytes behind. With the truncate fix the file must
+        // shrink back to exactly the serialized length.
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("a.bin");
+        let meta_path = ResumableUploadedFileMeta::path(&file_path);
+
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::NotStarted]));
+        let mut padded = std::fs::read(&meta_path).unwrap();
+        padded.extend(std::iter::repeat_n(b' ', 64));
+        std::fs::write(&meta_path, &padded).unwrap();
+
+        ResumableUploadedFileMeta::update_meta_file(file_path.clone(), |meta| {
+            meta.chunks.insert(0, ChunkStatus::Completed);
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+        let expected = serde_json::to_vec(&read_meta_raw(&file_path)).unwrap();
+        assert_eq!(
+            std::fs::metadata(&meta_path).unwrap().len(),
+            expected.len() as u64,
+            "file must be exactly the new serialized length (no trailing padding)"
+        );
+        assert_eq!(std::fs::read(&meta_path).unwrap(), expected);
+    }
+
+    // ----- State transitions / chunk merge predicate -----
+
+    #[tokio::test]
+    async fn cannot_transition_to_ongoing_twice() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("a.bin");
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::NotStarted]));
+
+        ResumableUploadedFileMeta::update_meta_file(file_path.clone(), |meta| {
+            meta.chunks.insert(0, ChunkStatus::Ongoing);
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+        // Simulate the put() handler's check-and-set closure.
+        let result = ResumableUploadedFileMeta::update_meta_file(file_path.clone(), |meta| {
+            match meta.chunks.get(&0) {
+                Some(s) if s.is_ongoing() => return Err(ServerError::ChunkIsOngoing),
+                _ => {}
+            }
+            meta.chunks.insert(0, ChunkStatus::Ongoing);
+            Ok(())
+        })
+        .await;
+
+        assert!(matches!(result, Err(ServerError::ChunkIsOngoing)));
+    }
+
+    #[tokio::test]
+    async fn cannot_transition_completed_to_ongoing() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("a.bin");
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::Completed]));
+
+        let result = ResumableUploadedFileMeta::update_meta_file(file_path.clone(), |meta| {
+            match meta.chunks.get(&0) {
+                Some(s) if s.is_completed() => return Err(ServerError::ChunkIsCompleted),
+                _ => {}
+            }
+            meta.chunks.insert(0, ChunkStatus::Ongoing);
+            Ok(())
+        })
+        .await;
+
+        assert!(matches!(result, Err(ServerError::ChunkIsCompleted)));
+    }
+
+    #[tokio::test]
+    async fn all_completed_predicate_flips_on_last_chunk() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("a.bin");
+        write_meta_raw(
+            &file_path,
+            &fixture(&[ChunkStatus::NotStarted; 3]),
+        );
+
+        for i in 0..2 {
+            ResumableUploadedFileMeta::update_meta_file(file_path.clone(), move |meta| {
+                meta.chunks.insert(i, ChunkStatus::Completed);
+                Ok(())
+            })
+            .await
+            .unwrap();
+            assert!(
+                !read_meta_raw(&file_path).chunks.values().all(|s| s.is_completed()),
+                "predicate must stay false until the final chunk"
+            );
+        }
+
+        ResumableUploadedFileMeta::update_meta_file(file_path.clone(), |meta| {
+            meta.chunks.insert(2, ChunkStatus::Completed);
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert!(read_meta_raw(&file_path).chunks.values().all(|s| s.is_completed()));
+    }
+
+    // ----- reset_ongoing_chunk_to_not_started (free fn) -----
+
+    #[tokio::test]
+    async fn reset_ongoing_to_not_started_resets_ongoing() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("a.bin");
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::Ongoing]));
+
+        reset_ongoing_chunk_to_not_started(file_path.clone(), 0).await;
+
+        assert_eq!(read_meta_raw(&file_path).chunks[&0], ChunkStatus::NotStarted);
+    }
+
+    #[tokio::test]
+    async fn reset_ongoing_to_not_started_leaves_completed_alone() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("a.bin");
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::Completed]));
+
+        reset_ongoing_chunk_to_not_started(file_path.clone(), 0).await;
+
+        assert_eq!(read_meta_raw(&file_path).chunks[&0], ChunkStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn reset_ongoing_to_not_started_leaves_not_started_alone() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("a.bin");
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::NotStarted]));
+
+        reset_ongoing_chunk_to_not_started(file_path.clone(), 0).await;
+
+        assert_eq!(read_meta_raw(&file_path).chunks[&0], ChunkStatus::NotStarted);
+    }
+
+    #[tokio::test]
+    async fn reset_ongoing_to_not_started_ignores_missing_meta() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("does-not-exist.bin");
+        // No panic, no observable side effect.
+        reset_ongoing_chunk_to_not_started(file_path, 0).await;
+    }
+
+    // ----- OngoingChunkGuard Drop semantics -----
+
+    #[tokio::test]
+    async fn guard_drop_without_commit_resets_chunk() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("a.bin");
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::Ongoing]));
+
+        {
+            let _guard = OngoingChunkGuard::new(file_path.clone(), 0);
+            // _guard drops here without commit
+        }
+
+        let fp = file_path.clone();
+        await_predicate(|| read_meta_raw(&fp).chunks[&0] == ChunkStatus::NotStarted).await;
+    }
+
+    #[tokio::test]
+    async fn guard_commit_prevents_reset() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("a.bin");
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::Ongoing]));
+
+        let guard = OngoingChunkGuard::new(file_path.clone(), 0);
+        guard.commit();
+
+        // Give any (incorrectly spawned) cleanup task plenty of time to run.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(read_meta_raw(&file_path).chunks[&0], ChunkStatus::Ongoing);
+    }
+
+    #[tokio::test]
+    async fn guard_drop_does_not_clobber_completed() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("a.bin");
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::Ongoing]));
+        let guard = OngoingChunkGuard::new(file_path.clone(), 0);
+
+        // Race scenario: a retry completed the chunk before our cleanup spawned.
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::Completed]));
+        drop(guard);
+
+        // Wait long enough for any reset task to have run.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(read_meta_raw(&file_path).chunks[&0], ChunkStatus::Completed);
+    }
+
+    // ----- reset_stale_ongoing_chunks (startup scan) -----
+
+    #[tokio::test]
+    async fn startup_scan_resets_ongoing_in_nested_dirs() {
+        let dir = TempDir::new().unwrap();
+        let nested = dir.path().join("a").join("b");
+        std::fs::create_dir_all(&nested).unwrap();
+        let file_path = nested.join("file.bin");
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::Ongoing]));
+
+        reset_stale_ongoing_chunks(dir.path()).await;
+
+        assert_eq!(read_meta_raw(&file_path).chunks[&0], ChunkStatus::NotStarted);
+    }
+
+    #[tokio::test]
+    async fn startup_scan_only_touches_ongoing_chunks() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("mix.bin");
+        write_meta_raw(
+            &file_path,
+            &fixture(&[
+                ChunkStatus::NotStarted,
+                ChunkStatus::Ongoing,
+                ChunkStatus::Completed,
+            ]),
+        );
+
+        reset_stale_ongoing_chunks(dir.path()).await;
+
+        let meta = read_meta_raw(&file_path);
+        assert_eq!(meta.chunks[&0], ChunkStatus::NotStarted);
+        assert_eq!(meta.chunks[&1], ChunkStatus::NotStarted);
+        assert_eq!(meta.chunks[&2], ChunkStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn startup_scan_ignores_non_meta_files() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("payload.bin.resumable-upload"), b"data").unwrap();
+        std::fs::write(dir.path().join("unrelated.txt"), b"x").unwrap();
+
+        // Should not panic, should not touch unrelated files.
+        reset_stale_ongoing_chunks(dir.path()).await;
+
+        assert_eq!(
+            std::fs::read(dir.path().join("payload.bin.resumable-upload")).unwrap(),
+            b"data"
+        );
+        assert_eq!(std::fs::read(dir.path().join("unrelated.txt")).unwrap(), b"x");
+    }
+
+    #[tokio::test]
+    async fn startup_scan_tolerates_missing_root() {
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("does-not-exist");
+        // Must not panic.
+        reset_stale_ongoing_chunks(&missing).await;
+    }
+
+    #[tokio::test]
+    async fn startup_scan_skips_corrupt_meta_and_processes_valid() {
+        let dir = TempDir::new().unwrap();
+        let corrupt_path = dir.path().join("corrupt.bin");
+        std::fs::write(
+            ResumableUploadedFileMeta::path(&corrupt_path),
+            b"not json at all",
+        )
+        .unwrap();
+
+        let valid_path = dir.path().join("valid.bin");
+        write_meta_raw(&valid_path, &fixture(&[ChunkStatus::Ongoing]));
+
+        reset_stale_ongoing_chunks(dir.path()).await;
+
+        assert_eq!(
+            read_meta_raw(&valid_path).chunks[&0],
+            ChunkStatus::NotStarted
+        );
+    }
+
+    #[tokio::test]
+    async fn startup_scan_empty_root_noop() {
+        let dir = TempDir::new().unwrap();
+        // Empty dir, no metas, no panic.
+        reset_stale_ongoing_chunks(dir.path()).await;
+    }
 }

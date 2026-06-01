@@ -36,3 +36,6 @@ tower-service = "0.3"
 [build-dependencies]
 lightningcss = "1.0.0-alpha.71"
 oxc = { version = "0.127", features = ["minifier", "codegen"] }
+
+[dev-dependencies]
+tempfile = "3"

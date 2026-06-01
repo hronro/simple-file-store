@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Upgrade Rust to v1.96.
 - Upgrade dependencies to their latest versions.
 
+### Fixed
+
+- Race condition in `PUT /upload/{file}` where two concurrent requests for the same chunk could both pass the "chunk is available" check and write to the same byte range, corrupting the upload. The check is now atomic with the transition to the `Ongoing` status under the meta file lock.
+- Orphaned `Ongoing` chunks blocking retries after a client disconnect, runtime cancellation, or process kill. A new RAII guard resets the chunk back to `NotStarted` if the request future is dropped before completion, and a startup scan walks the store path on boot to recover any chunks left `Ongoing` by a hard kill of the previous run.
+- `update_meta_file` no longer leaves trailing bytes from the previous write when the new serialized meta is shorter than what was on disk. The file is now truncated to exactly the new content's length, and writes are skipped entirely when the updater leaves the meta unchanged.
+
 ### Security
 
 - Reject `..`, absolute paths, and other non-normal path components in user-supplied file and directory paths, preventing directory traversal that could read or write files outside the configured store path. Affected endpoints: `/files/*`, `/upload/*`, and the multipart upload's `filename` field.

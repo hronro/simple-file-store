@@ -11,6 +11,7 @@ use tokio::task::JoinError;
 use crate::html;
 use crate::templates;
 
+#[derive(Debug)]
 pub enum ServerError {
     MissingCredentials { current_uri: String },
     TokenCreation { redirect_uri: Option<String> },
