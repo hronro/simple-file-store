@@ -3,7 +3,7 @@ use std::fs::{File as StdFile, OpenOptions as StdOpenOptions};
 use std::io::BufReader;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path as StdPath, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 
 use axum::body::Body;
 use axum::extract::Path;
@@ -34,7 +34,11 @@ static ACTIVE_UPLOAD_BYTES: LazyLock<Arc<Semaphore>> = LazyLock::new(|| {
         byte_budget_permits(CONFIG.max_active_upload_bytes) as usize,
     ))
 });
-static ACTIVE_CHUNKS_BY_UPLOAD: LazyLock<Mutex<HashMap<PathBuf, Arc<Semaphore>>>> =
+/// Per-upload-path semaphores, held by `Weak` so they self-collect once every
+/// in-flight `UploadPermits` for that path is dropped — no manual map cleanup,
+/// no `Arc::strong_count` games. Stale entries (where the `Weak` can no longer
+/// upgrade) are swept opportunistically on the next acquire for that path.
+static ACTIVE_CHUNKS_BY_UPLOAD: LazyLock<Mutex<HashMap<PathBuf, Weak<Semaphore>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Serialize_repr, Deserialize_repr, Debug, Clone, Copy, PartialEq, Eq)]
@@ -484,15 +488,15 @@ pub async fn put(
 }
 
 struct UploadPermits {
-    global_permit: Option<OwnedSemaphorePermit>,
-    upload_permit: Option<OwnedSemaphorePermit>,
-    byte_budget_permit: Option<OwnedSemaphorePermit>,
-    upload_path: PathBuf,
-    upload_semaphore: Arc<Semaphore>,
+    // Fields are held only for their `Drop` side effect (releasing the permits
+    // back to their respective semaphores when this struct goes out of scope).
+    _global_permit: OwnedSemaphorePermit,
+    _upload_permit: OwnedSemaphorePermit,
+    _byte_budget_permit: OwnedSemaphorePermit,
 }
 
 impl UploadPermits {
-    fn acquire(upload_path: &std::path::Path, content_length: usize) -> Result<Self, ServerError> {
+    fn acquire(upload_path: &StdPath, content_length: usize) -> Result<Self, ServerError> {
         let global_permit = ACTIVE_UPLOAD_CHUNKS
             .clone()
             .try_acquire_owned()
@@ -502,41 +506,47 @@ impl UploadPermits {
             .try_acquire_many_owned(byte_budget_permits(content_length))
             .map_err(|_| ServerError::TooManyUploadRequests)?;
 
-        let upload_semaphore = {
-            let mut active_chunks_by_upload = ACTIVE_CHUNKS_BY_UPLOAD.lock().unwrap();
-            active_chunks_by_upload
-                .entry(upload_path.to_path_buf())
-                .or_insert_with(|| Arc::new(Semaphore::new(CONFIG.max_active_chunks_per_upload)))
-                .clone()
-        };
+        let upload_semaphore = Self::get_or_create_upload_semaphore(upload_path);
         let upload_permit = upload_semaphore
-            .clone()
             .try_acquire_owned()
             .map_err(|_| ServerError::TooManyUploadRequests)?;
 
         Ok(Self {
-            global_permit: Some(global_permit),
-            upload_permit: Some(upload_permit),
-            byte_budget_permit: Some(byte_budget_permit),
-            upload_path: upload_path.to_path_buf(),
-            upload_semaphore,
+            _global_permit: global_permit,
+            _upload_permit: upload_permit,
+            _byte_budget_permit: byte_budget_permit,
         })
+    }
+
+    /// Returns the live `Arc<Semaphore>` for `upload_path`, creating a new one
+    /// if the map has no entry yet or the existing `Weak` can no longer be
+    /// upgraded. The pure map-manipulation logic lives in
+    /// [`get_or_create_in_map`] so it can be unit-tested without touching the
+    /// global statics.
+    fn get_or_create_upload_semaphore(upload_path: &StdPath) -> Arc<Semaphore> {
+        let mut map = ACTIVE_CHUNKS_BY_UPLOAD.lock().unwrap();
+        get_or_create_in_map(&mut map, upload_path, CONFIG.max_active_chunks_per_upload)
     }
 }
 
-impl Drop for UploadPermits {
-    fn drop(&mut self) {
-        self.global_permit.take();
-        self.upload_permit.take();
-        self.byte_budget_permit.take();
-
-        if self.upload_semaphore.available_permits() == CONFIG.max_active_chunks_per_upload {
-            let mut active_chunks_by_upload = ACTIVE_CHUNKS_BY_UPLOAD.lock().unwrap();
-            if Arc::strong_count(&self.upload_semaphore) == 2 {
-                active_chunks_by_upload.remove(&self.upload_path);
-            }
-        }
+/// Get the live `Arc<Semaphore>` for `upload_path` from `map`, creating a new
+/// one (sized at `max_permits`) when the entry is absent or its `Weak` can no
+/// longer be upgraded. Dead entries for *other* paths are swept on the cold
+/// path only (when we already have to allocate), bounding map growth without
+/// an extra O(n) sweep on every acquire.
+fn get_or_create_in_map(
+    map: &mut HashMap<PathBuf, Weak<Semaphore>>,
+    upload_path: &StdPath,
+    max_permits: usize,
+) -> Arc<Semaphore> {
+    if let Some(arc) = map.get(upload_path).and_then(Weak::upgrade) {
+        return arc;
     }
+
+    map.retain(|_, weak| weak.strong_count() > 0);
+    let arc = Arc::new(Semaphore::new(max_permits));
+    map.insert(upload_path.to_path_buf(), Arc::downgrade(&arc));
+    arc
 }
 
 fn byte_budget_permits(byte_count: usize) -> u32 {
@@ -1063,5 +1073,90 @@ mod tests {
         let dir = TempDir::new().unwrap();
         // Empty dir, no metas, no panic.
         reset_stale_ongoing_chunks(dir.path()).await;
+    }
+
+    // ----- get_or_create_in_map (Weak per-upload semaphore map) -----
+
+    #[test]
+    fn weak_map_creates_entry_when_empty() {
+        let mut map = HashMap::new();
+        let arc = get_or_create_in_map(&mut map, StdPath::new("/store/a.bin"), 4);
+        assert_eq!(map.len(), 1);
+        assert!(map.contains_key(StdPath::new("/store/a.bin")));
+        assert_eq!(arc.available_permits(), 4);
+    }
+
+    #[test]
+    fn weak_map_returns_same_arc_for_live_entry() {
+        let mut map = HashMap::new();
+        let arc1 = get_or_create_in_map(&mut map, StdPath::new("/store/a.bin"), 4);
+        let arc2 = get_or_create_in_map(&mut map, StdPath::new("/store/a.bin"), 4);
+        assert!(Arc::ptr_eq(&arc1, &arc2));
+        assert_eq!(map.len(), 1);
+    }
+
+    #[test]
+    fn weak_map_replaces_dead_entry_for_same_path() {
+        let mut map = HashMap::new();
+        let arc1 = get_or_create_in_map(&mut map, StdPath::new("/store/a.bin"), 4);
+        drop(arc1);
+        // The Weak in the map is now dead.
+        let weak_before = map.get(StdPath::new("/store/a.bin")).cloned().unwrap();
+        assert_eq!(weak_before.strong_count(), 0);
+
+        let arc2 = get_or_create_in_map(&mut map, StdPath::new("/store/a.bin"), 4);
+        assert_eq!(arc2.available_permits(), 4);
+        // The entry's Weak must point to the *new* allocation, not the dead one.
+        let new_weak = map.get(StdPath::new("/store/a.bin")).unwrap();
+        assert!(new_weak.upgrade().is_some());
+        assert!(Arc::ptr_eq(&new_weak.upgrade().unwrap(), &arc2));
+    }
+
+    #[test]
+    fn weak_map_distinct_paths_get_distinct_arcs() {
+        let mut map = HashMap::new();
+        let arc_a = get_or_create_in_map(&mut map, StdPath::new("/store/a.bin"), 4);
+        let arc_b = get_or_create_in_map(&mut map, StdPath::new("/store/b.bin"), 4);
+        assert!(!Arc::ptr_eq(&arc_a, &arc_b));
+        assert_eq!(map.len(), 2);
+    }
+
+    #[test]
+    fn weak_map_cold_path_sweeps_dead_entries_for_other_paths() {
+        let mut map = HashMap::new();
+        // Seed two dead Weaks for unrelated paths.
+        let stale_a = Arc::new(Semaphore::new(1));
+        let stale_b = Arc::new(Semaphore::new(1));
+        map.insert(PathBuf::from("/store/stale_a"), Arc::downgrade(&stale_a));
+        map.insert(PathBuf::from("/store/stale_b"), Arc::downgrade(&stale_b));
+        drop(stale_a);
+        drop(stale_b);
+        assert_eq!(map.len(), 2);
+
+        // Cold-path acquire for a new path triggers the sweep.
+        let _arc = get_or_create_in_map(&mut map, StdPath::new("/store/new.bin"), 4);
+        assert_eq!(map.len(), 1, "dead entries for other paths must be swept");
+        assert!(map.contains_key(StdPath::new("/store/new.bin")));
+    }
+
+    #[test]
+    fn weak_map_hot_path_does_not_sweep() {
+        let mut map = HashMap::new();
+        // Live entry for path A.
+        let arc_a = get_or_create_in_map(&mut map, StdPath::new("/store/a.bin"), 4);
+        // Dead Weak for path B, inserted by hand.
+        let stale_b = Arc::new(Semaphore::new(1));
+        map.insert(PathBuf::from("/store/b.bin"), Arc::downgrade(&stale_b));
+        drop(stale_b);
+        assert_eq!(map.len(), 2);
+
+        // Hot-path acquire for A — should upgrade existing Weak and *not* sweep.
+        let arc_a_again = get_or_create_in_map(&mut map, StdPath::new("/store/a.bin"), 4);
+        assert!(Arc::ptr_eq(&arc_a, &arc_a_again));
+        assert_eq!(
+            map.len(),
+            2,
+            "hot path must not pay the O(n) sweep cost; stale B entry stays until cold path"
+        );
     }
 }

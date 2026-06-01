@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Orphaned `Ongoing` chunks blocking retries after a client disconnect, runtime cancellation, or process kill. A new RAII guard resets the chunk back to `NotStarted` if the request future is dropped before completion, and a startup scan walks the store path on boot to recover any chunks left `Ongoing` by a hard kill of the previous run.
 - `update_meta_file` no longer leaves trailing bytes from the previous write when the new serialized meta is shorter than what was on disk. The file is now truncated to exactly the new content's length, and writes are skipped entirely when the updater leaves the meta unchanged.
 
+### Changed
+
+- Per-upload semaphores in the chunk concurrency map are now held by `Weak` references instead of `Arc`, removing the fragile `Arc::strong_count == 2` cleanup heuristic in `UploadPermits::Drop`. Stale entries are swept opportunistically on the next acquire for the same path. This also fixes a small map leak when `UploadPermits::acquire` failed after creating the entry but before successfully acquiring all permits.
+
 ### Security
 
 - Reject `..`, absolute paths, and other non-normal path components in user-supplied file and directory paths, preventing directory traversal that could read or write files outside the configured store path. Affected endpoints: `/files/*`, `/upload/*`, and the multipart upload's `filename` field.
