@@ -87,52 +87,8 @@ pub struct Files<'a> {
     pub upload_uri: String,
 }
 
-// FIXME: For now, Sailfish does not support pattern matching in the
-// template. So we have to use struct as a workaround.
-//
-// #[derive(Eq, PartialEq)]
-// pub enum FilesEntry {
-//     Dir {
-//         name: String,
-//         modified: OffsetDateTime,
-//     },
-//     File {
-//         name: String,
-//         modified: OffsetDateTime,
-//         size: u64,
-//     },
-// }
-// impl Ord for FilesEntry {
-//     fn cmp(&self, other: &Self) -> Ordering {
-//         match (self, other) {
-//             (Self::Dir { name: name1, .. }, Self::Dir { name: name2, .. }) => name1.cmp(name2),
-//             (Self::File { name: name1, .. }, Self::File { name: name2, .. }) => name1.cmp(name2),
-//             (Self::Dir { .. }, Self::File { .. }) => Ordering::Less,
-//             (Self::File { .. }, Self::Dir { .. }) => Ordering::Greater,
-//         }
-//     }
-// }
-// impl PartialOrd for FilesEntry {
-//     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-//         Some(self.cmp(other))
-//     }
-// }
-// impl FilesEntry {
-//     pub fn name(&self) -> &str {
-//         match self {
-//             Self::Dir { name, .. } => name,
-//             Self::File { name, .. } => name,
-//         }
-//     }
-//
-//     pub fn modified(&self) -> OffsetDateTime {
-//         match self {
-//             Self::Dir { modified, .. } => *modified,
-//             Self::File { modified, .. } => *modified,
-//         }
-//     }
-// }
-
+// Sailfish doesn't support pattern matching in the template, so this is a
+// struct with a discriminant flag rather than an enum with Dir/File variants.
 #[derive(Eq, PartialEq)]
 pub struct FilesEntry {
     /// The name of the entry.

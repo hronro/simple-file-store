@@ -340,7 +340,6 @@ pub async fn post(
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: err.to_string(),
         })?;
-    fs::File::create(&upload_meta_file_path).await?;
     fs::write(&upload_meta_file_path, upload_meta_file_content).await?;
 
     let upload_file_name = format!(
