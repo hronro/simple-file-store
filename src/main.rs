@@ -18,6 +18,7 @@ mod hello_world;
 mod home;
 mod html;
 mod login;
+mod safe_path;
 mod templates;
 mod upload;
 

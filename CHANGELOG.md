@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Upgrade Rust to v1.96.
 - Upgrade dependencies to their latest versions.
 
+### Security
+
+- Reject `..`, absolute paths, and other non-normal path components in user-supplied file and directory paths, preventing directory traversal that could read or write files outside the configured store path. Affected endpoints: `/files/*`, `/upload/*`, and the multipart upload's `filename` field.
+
 ## [0.3.1]
 
 ### Changed

@@ -15,6 +15,7 @@ use tokio_util::io::{ReaderStream, StreamReader};
 use crate::auth::Claims;
 use crate::config::CONFIG;
 use crate::errors::ServerError;
+use crate::safe_path::safe_join;
 use crate::templates;
 
 pub const ROUTE_PATH: &str = "/files/{*file_path}";
@@ -29,7 +30,7 @@ pub async fn get(
     claims: Claims,
     Path(path): Path<String>,
 ) -> Result<impl IntoResponse, ServerError> {
-    let full_path = CONFIG.store_path.join(&path);
+    let full_path = safe_join(&CONFIG.store_path, &path)?;
 
     let metadata = fs::metadata(&full_path).await?;
 
@@ -106,7 +107,7 @@ pub async fn post(
     OriginalUri(uri): OriginalUri,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, ServerError> {
-    let dir_path = CONFIG.store_path.join(&path);
+    let dir_path = safe_join(&CONFIG.store_path, &path)?;
 
     let field = multipart
         .next_field()
@@ -122,7 +123,7 @@ pub async fn post(
         return Err(ServerError::InvalidUploadForm);
     };
 
-    let file_path = dir_path.join(format!("{file_name}.form-upload"));
+    let file_path = safe_join(&dir_path, &format!("{file_name}.form-upload"))?;
 
     let body_with_io_error = field.map_err(IoError::other);
     let body_reader = StreamReader::new(body_with_io_error);
@@ -131,11 +132,7 @@ pub async fn post(
 
     tokio::io::copy(&mut body_reader, &mut file).await?;
 
-    let final_file_path = {
-        let mut final_file_path = file_path.clone();
-        final_file_path.set_file_name(file_name);
-        final_file_path
-    };
+    let final_file_path = safe_join(&dir_path, &file_name)?;
 
     fs::rename(file_path, final_file_path).await?;
 

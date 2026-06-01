@@ -22,6 +22,7 @@ use tokio::task::spawn_blocking;
 use crate::auth::Claims;
 use crate::config::CONFIG;
 use crate::errors::ServerError;
+use crate::safe_path::safe_join;
 
 pub const ROUTE_PATH: &str = "/upload/{*file_path}";
 const UPLOAD_BYTE_BUDGET_UNIT: usize = 1024 * 1024;
@@ -158,7 +159,7 @@ impl ResumableUploadedFileMeta {
 
 /// Get the meta information of a resumable uploaded file.
 pub async fn get(_: Claims, Path(path): Path<String>) -> Result<impl IntoResponse, ServerError> {
-    let file_path = CONFIG.store_path.join(&path);
+    let file_path = safe_join(&CONFIG.store_path, &path)?;
 
     if let Some(meta) = ResumableUploadedFileMeta::read_from_file(&file_path).await? {
         Ok(Json(meta).into_response())
@@ -179,7 +180,7 @@ pub async fn post(
     Path(path): Path<String>,
     request: Json<CreateResumableUploadFileRequest>,
 ) -> Result<impl IntoResponse, ServerError> {
-    let file_path = CONFIG.store_path.join(&path);
+    let file_path = safe_join(&CONFIG.store_path, &path)?;
 
     if ResumableUploadedFileMeta::exists(&file_path)? {
         return Err(ServerError::FileAlreadyExists);
@@ -236,7 +237,7 @@ pub async fn put(
     headers: HeaderMap,
     body: Body,
 ) -> Result<impl IntoResponse, ServerError> {
-    let file_path = CONFIG.store_path.join(&path);
+    let file_path = safe_join(&CONFIG.store_path, &path)?;
 
     let upload_file_name = format!(
         "{}.resumable-upload",

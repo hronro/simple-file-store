@@ -18,6 +18,7 @@ pub enum ServerError {
     IoError(IoError),
     InternalError(String),
     InvalidUploadForm,
+    InvalidPath,
     FileAlreadyExists,
     FileIsNotCreated,
     UploadMetaIsBroken,
@@ -124,6 +125,12 @@ impl IntoResponse for ServerError {
             Self::InvalidUploadForm => (
                 StatusCode::BAD_REQUEST,
                 Html(html::error::bad_request("Invalid upload form.")),
+            )
+                .into_response(),
+
+            Self::InvalidPath => (
+                StatusCode::BAD_REQUEST,
+                Html(html::error::bad_request("Invalid file path.")),
             )
                 .into_response(),
 
