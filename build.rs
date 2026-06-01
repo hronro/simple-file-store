@@ -67,7 +67,7 @@ fn main() {
                     OxcParser::new(&allocator, &content, OxcSourceType::cjs()).parse();
                 let minify_return = OxcMinifier::new(OxcMinifierOptions {
                     mangle: Some(OxcMangleOptions {
-                        top_level: true,
+                        top_level: Some(true),
                         ..Default::default()
                     }),
                     ..Default::default()
