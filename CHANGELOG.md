@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Stream resumable upload chunks directly to disk instead of buffering the full chunk in memory, reducing memory pressure during concurrent uploads.
 - Return `429 Too Many Requests` with `Retry-After` when upload concurrency limits are reached, and make the web client retry affected chunks instead of failing the upload immediately.
+- Upgrade Rust to v1.96.
 
 ## [0.3.1]
 
