@@ -91,6 +91,9 @@ impl ResumableUploadedFileMeta {
     pub fn path<T: AsRef<std::path::Path>>(file_path: T) -> PathBuf {
         let file_name = format!(
             "{}.resumable-meta",
+            // The first `unwrap()` is safe because `file_path` is guaranteed to have a file name,
+            // and for the second `unwrap()`, since we are unlikely to support OSes that allow
+            // non-UTF-8 file names, it's acceptable to panic if the file name is not valid UTF-8.
             file_path.as_ref().file_name().unwrap().to_str().unwrap()
         );
         file_path.as_ref().with_file_name(file_name)
@@ -179,9 +182,10 @@ impl ResumableUploadedFileMeta {
 async fn reset_ongoing_chunk_to_not_started(file_path: PathBuf, chunk_index: usize) {
     let _ = ResumableUploadedFileMeta::update_meta_file(file_path, move |meta| {
         if let Some(status) = meta.chunks.get(&chunk_index)
-            && status.is_ongoing() {
-                meta.chunks.insert(chunk_index, ChunkStatus::NotStarted);
-            }
+            && status.is_ongoing()
+        {
+            meta.chunks.insert(chunk_index, ChunkStatus::NotStarted);
+        }
         Ok(())
     })
     .await;
@@ -870,10 +874,7 @@ mod tests {
     async fn all_completed_predicate_flips_on_last_chunk() {
         let dir = TempDir::new().unwrap();
         let file_path = dir.path().join("a.bin");
-        write_meta_raw(
-            &file_path,
-            &fixture(&[ChunkStatus::NotStarted; 3]),
-        );
+        write_meta_raw(&file_path, &fixture(&[ChunkStatus::NotStarted; 3]));
 
         for i in 0..2 {
             ResumableUploadedFileMeta::update_meta_file(file_path.clone(), move |meta| {
@@ -883,7 +884,10 @@ mod tests {
             .await
             .unwrap();
             assert!(
-                !read_meta_raw(&file_path).chunks.values().all(|s| s.is_completed()),
+                !read_meta_raw(&file_path)
+                    .chunks
+                    .values()
+                    .all(|s| s.is_completed()),
                 "predicate must stay false until the final chunk"
             );
         }
@@ -894,7 +898,12 @@ mod tests {
         })
         .await
         .unwrap();
-        assert!(read_meta_raw(&file_path).chunks.values().all(|s| s.is_completed()));
+        assert!(
+            read_meta_raw(&file_path)
+                .chunks
+                .values()
+                .all(|s| s.is_completed())
+        );
     }
 
     // ----- reset_ongoing_chunk_to_not_started (free fn) -----
@@ -907,7 +916,10 @@ mod tests {
 
         reset_ongoing_chunk_to_not_started(file_path.clone(), 0).await;
 
-        assert_eq!(read_meta_raw(&file_path).chunks[&0], ChunkStatus::NotStarted);
+        assert_eq!(
+            read_meta_raw(&file_path).chunks[&0],
+            ChunkStatus::NotStarted
+        );
     }
 
     #[tokio::test]
@@ -929,7 +941,10 @@ mod tests {
 
         reset_ongoing_chunk_to_not_started(file_path.clone(), 0).await;
 
-        assert_eq!(read_meta_raw(&file_path).chunks[&0], ChunkStatus::NotStarted);
+        assert_eq!(
+            read_meta_raw(&file_path).chunks[&0],
+            ChunkStatus::NotStarted
+        );
     }
 
     #[tokio::test]
@@ -999,7 +1014,10 @@ mod tests {
 
         reset_stale_ongoing_chunks(dir.path()).await;
 
-        assert_eq!(read_meta_raw(&file_path).chunks[&0], ChunkStatus::NotStarted);
+        assert_eq!(
+            read_meta_raw(&file_path).chunks[&0],
+            ChunkStatus::NotStarted
+        );
     }
 
     #[tokio::test]
@@ -1036,7 +1054,10 @@ mod tests {
             std::fs::read(dir.path().join("payload.bin.resumable-upload")).unwrap(),
             b"data"
         );
-        assert_eq!(std::fs::read(dir.path().join("unrelated.txt")).unwrap(), b"x");
+        assert_eq!(
+            std::fs::read(dir.path().join("unrelated.txt")).unwrap(),
+            b"x"
+        );
     }
 
     #[tokio::test]
