@@ -14,10 +14,10 @@ mod auth;
 mod config;
 mod errors;
 mod files;
-mod hello_world;
 mod home;
 mod html;
 mod login;
+mod ping;
 mod safe_path;
 mod templates;
 mod upload;
@@ -26,7 +26,7 @@ mod upload;
 async fn main() -> Result<()> {
     let app = Router::new()
         .route(assets::ROUTE_PATH, get(assets::get))
-        .route(hello_world::ROUTE_PATH, get(hello_world::get))
+        .route(ping::ROUTE_PATH, get(ping::get))
         .route(login::ROUTE_PATH, get(login::get).post(login::post))
         .route(home::ROUTE_PATH, get(home::get))
         .route(files::ROUTE_PATH_ROOT, get(files::root_get))

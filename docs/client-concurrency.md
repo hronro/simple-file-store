@@ -30,6 +30,8 @@ The byte budget is not a memory allocation target. After streaming upload bodies
 
 Native clients may use higher concurrency than the built-in web client, but they should treat concurrency as adaptive rather than fixed.
 
+Before starting an upload, clients can verify their auth token by calling `GET /ping`. The endpoint returns `{"pong":"<username>"}` when the token is valid and `{"pong":null}` when no credentials are provided. An invalid token responds with `401 Unauthorized`.
+
 Recommended behavior:
 
 1. Start with a moderate concurrency such as `4` or `6`.

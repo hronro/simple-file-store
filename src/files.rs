@@ -216,9 +216,9 @@ pub async fn get(
                         (ACCEPT_RANGES, "bytes".to_string()),
                     ],
                     Body::from_stream(ReaderStream::with_capacity(
-                    file.take(length),
-                    READ_BUFFER_SIZE,
-                )),
+                        file.take(length),
+                        READ_BUFFER_SIZE,
+                    )),
                 )
                     .into_response())
             }
