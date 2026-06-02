@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Server-side concurrency limits for resumable uploads, configurable with `SFS_MAX_ACTIVE_UPLOAD_CHUNKS`, `SFS_MAX_ACTIVE_CHUNKS_PER_UPLOAD`, and `SFS_MAX_ACTIVE_UPLOAD_BYTES`.
+- HTTP `Range` request support in `GET /files/{path}`, enabling parallel and resumable downloads with clients like `aria2c -x` or `curl -r`.
 
 ### Changed
 
